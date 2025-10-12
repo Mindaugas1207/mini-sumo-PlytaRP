@@ -1,0 +1,40 @@
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+//MOTOR DRIVER
+#define MOTOR_DRIVER_FREQUENCY 10000 //20kHz
+#define MOTOR_DRIVER_PWMA 16
+#define MOTOR_DRIVER_DIRA 18
+#define MOTOR_DRIVER_INVA 0
+#define MOTOR_DRIVER_PWMB 17
+#define MOTOR_DRIVER_DIRB 19
+#define MOTOR_DRIVER_INVB 0
+
+#define MOTOR_DRIVER_ENABLE 25
+#define START_PIN 26
+
+//SENSORS
+#define SENSORS_ENABLE 20
+
+//LED
+#define LED_PIN 24
+
+//IMU
+#define IMU_INT_PIN 21
+
+//I2C
+#define I2C_PORT i2c0
+#define I2C_SDA 22
+#define I2C_SCL 23
+#define I2C_SPEED 400000 //400kHz
+
+//DEBUG
+#define DEBUG 1
+#define DEBUG_UART uart0
+#define DEBUG_UART_BAUD_RATE 115200
+#define DEBUG_UART_TX_PIN 28
+#define DEBUG_UART_RX_PIN 29
+#define DEBUG_VBUS_PIN 27
+
+#endif // CONFIG_H
