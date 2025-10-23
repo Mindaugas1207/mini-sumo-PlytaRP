@@ -23,9 +23,10 @@ public:
     bool available(void) override;
     char getc(void) override;
     void putc(char c) override;
-    void write(char *buffer, int len) override;
-    void write(char *string) override;
+    void write(const char *buffer, int len) override;
+    void write(const char *string) override;
     int readUntil(char *buf, int len, char stopChar, int timeout_ms) override;
+    void setBaudrate(int baud) override;
 };
 
 #endif // PIO_ONE_WIRE_SERIAL_H

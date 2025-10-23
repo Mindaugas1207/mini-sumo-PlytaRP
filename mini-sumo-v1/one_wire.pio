@@ -11,7 +11,8 @@
 ; R0001\n
 .program PioOneWireSerial_tx
 .side_set 1 opt pindirs
-    pull       side 0   ; Assert stop bit, or stall with line in idle state
+    pull side 0 [6]        ; Assert stop bit, or stall with line in idle state
+    mov osr, ~osr
     set x, 7   side 1 [7]  ; Preload bit counter, assert start bit for 8 clocks
 bitloop_tx:                   ; This loop will run 8 times (8n1 UART)
     out pindirs, 1            ; Shift 1 bit from OSR to the first OUT pin

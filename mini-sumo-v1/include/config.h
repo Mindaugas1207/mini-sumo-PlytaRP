@@ -24,10 +24,10 @@
 #define IMU_INT_PIN 21
 
 //I2C
-#define I2C_PORT i2c0
+#define I2C_PORT i2c1
 #define I2C_SDA 22
 #define I2C_SCL 23
-#define I2C_SPEED 400000 //400kHz
+#define I2C_SPEED 100000 //400kHz
 
 //DEBUG
 #define DEBUG 1

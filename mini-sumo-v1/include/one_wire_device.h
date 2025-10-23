@@ -4,32 +4,44 @@
 
 #include "one_wire.h"
 
-enum DeviceIOMode
-{
-    IOMODE_ERROR = -1,
-    IOMODE_SERIAL = 0,
-    IOMODE_DO = 1,
-    IOMODE_PWM = 2
-};
-
-enum DeviceSerialBaudRate
-{
-    SERIAL_BAUD_ERROR = -1,
-    SERIAL_BAUD_9600 = 0,
-    SERIAL_BAUD_19200 = 1,
-    SERIAL_BAUD_38400 = 2,
-    SERIAL_BAUD_57600 = 3,
-    SERIAL_BAUD_74880 = 4,
-    SERIAL_BAUD_115200 = 5,
-    SERIAL_BAUD_230400 = 6,
-    SERIAL_BAUD_250000 = 7
-};
-
 class OneWireDevice
 {
+public:
+    enum DeviceIOMode
+    {
+        IOMODE_ERROR = -1,
+        IOMODE_SERIAL = 0,
+        IOMODE_DO = 1,
+        IOMODE_PWM = 2
+    };
+
+    enum DeviceSerialBaudRate
+    {
+        SERIAL_BAUD_ERROR = -1,
+        SERIAL_BAUD_9600 = 0,
+        SERIAL_BAUD_19200 = 1,
+        SERIAL_BAUD_38400 = 2,
+        SERIAL_BAUD_57600 = 3,
+        SERIAL_BAUD_74880 = 4,
+        SERIAL_BAUD_115200 = 5,
+        SERIAL_BAUD_230400 = 6,
+        SERIAL_BAUD_250000 = 7
+    };
 private:
     OneWire &oneWire;
     uint index;
+
+    constexpr int baudRateFromCode(DeviceSerialBaudRate code)
+    {
+        return code == SERIAL_BAUD_9600     ? 9600
+               : code == SERIAL_BAUD_19200  ? 19200
+               : code == SERIAL_BAUD_38400  ? 38400
+               : code == SERIAL_BAUD_57600  ? 57600
+               : code == SERIAL_BAUD_74880  ? 74880
+               : code == SERIAL_BAUD_115200 ? 115200
+               : code == SERIAL_BAUD_230400 ? 230400
+                                            : 250000;
+    }
 
 public:
     OneWireDevice(OneWire &oneWire, uint index);
@@ -39,6 +51,8 @@ public:
     bool waitForBoot(int timeout_ms);
 
     bool setIndex(uint index);
+
+    bool readIndex(uint &index);
 
     uint getIndex(void) const
     {

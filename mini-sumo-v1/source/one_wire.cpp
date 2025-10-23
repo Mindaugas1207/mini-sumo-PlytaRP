@@ -12,19 +12,19 @@ void OneWire::init(void)
 }
 void OneWire::setBaudrate(int baud)
 {
-    // Not implemented
+    serial.setBaudrate(baud);
 }
 int OneWire::getBaudrate(void)
 {
     // Not implemented
     return 0;
 }
-void OneWire::write(char *string)
+void OneWire::write(const char *string)
 {
     serial.listen(false);
     serial.write(string);
 }
-void OneWire::write(char *buffer, int length)
+void OneWire::write(const char *buffer, int length)
 {
     serial.listen(false);
     serial.write(buffer, length);

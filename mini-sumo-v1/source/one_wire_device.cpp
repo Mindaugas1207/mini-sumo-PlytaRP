@@ -10,7 +10,7 @@ OneWireDevice::OneWireDevice(OneWire &oneWire, uint index) : oneWire(oneWire), i
 
 bool OneWireDevice::begin(void)
 {
-    return waitForBoot(50);
+    return waitForBoot(1000);
 }
 
 bool OneWireDevice::waitForBoot(int timeout_ms)
@@ -29,20 +29,31 @@ bool OneWireDevice::waitForBoot(int timeout_ms)
 
 bool OneWireDevice::setIndex(uint index)
 {
+    uint _index = this->index;
     if (!writeRegister(0x15, index))
     {
         return false;
     }
+    this->index = index;
     saveConfiguration();
-    if (!waitForBoot(100))
+    if (!waitForBoot(1000))
     {
-        this->index = index;
+        this->index = _index;
         return false;
     }
     return true;
 }
 
-bool OneWireDevice::setIOMode(DeviceIOMode mode)
+bool OneWireDevice::readIndex(uint &index)
+{
+    if (!readRegister(0x15, &index))
+    {
+        return false;
+    }
+    return true;
+}
+
+bool OneWireDevice::setIOMode(OneWireDevice::DeviceIOMode mode)
 {
     if (mode > IOMODE_PWM || mode < IOMODE_SERIAL)
     {
@@ -51,7 +62,7 @@ bool OneWireDevice::setIOMode(DeviceIOMode mode)
     return writeRegister(0x14, mode);
 }
 
-DeviceIOMode OneWireDevice::getIOMode(void)
+OneWireDevice::DeviceIOMode OneWireDevice::getIOMode(void)
 {
     // Not implemented
     uint mode;
@@ -66,35 +77,32 @@ DeviceIOMode OneWireDevice::getIOMode(void)
     return (DeviceIOMode)mode;
 }
 
-bool OneWireDevice::setSerialBaudRate(DeviceSerialBaudRate baud)
+bool OneWireDevice::setSerialBaudRate(OneWireDevice::DeviceSerialBaudRate baud)
 {
     if (baud > SERIAL_BAUD_250000 || baud < SERIAL_BAUD_9600)
     {
         return false;
     }
+
+    DeviceSerialBaudRate previousBaud = getSerialBaudRate();
+
     if (!writeRegister(0x16, baud))
     {
         return false;
     }
     saveConfiguration();
-    int previousBaud = getSerialBaudRate();
-    oneWire.setBaudrate(baud == SERIAL_BAUD_9600     ? 9600
-                        : baud == SERIAL_BAUD_19200  ? 19200
-                        : baud == SERIAL_BAUD_38400  ? 38400
-                        : baud == SERIAL_BAUD_57600  ? 57600
-                        : baud == SERIAL_BAUD_74880  ? 74880
-                        : baud == SERIAL_BAUD_115200 ? 115200
-                        : baud == SERIAL_BAUD_230400 ? 230400
-                                                     : 250000);
-    if (!waitForBoot(100))
+    
+    oneWire.setBaudrate(baudRateFromCode(baud));
+
+    if (!waitForBoot(1000))
     {
-        oneWire.setBaudrate(previousBaud);
+        oneWire.setBaudrate(baudRateFromCode(previousBaud));
         return false;
     }
     return true;
 }
 
-DeviceSerialBaudRate OneWireDevice::getSerialBaudRate(void)
+OneWireDevice::DeviceSerialBaudRate OneWireDevice::getSerialBaudRate(void)
 {
     uint baud;
     if (!readRegister(0x16, &baud))

@@ -38,10 +38,11 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(mini-sumo-v1 mini-sumo-v1.cpp 
-        ${CMAKE_SOURCE_DIR}/source/motor_driver.cpp
+${CMAKE_SOURCE_DIR}/source/motor_driver.cpp
         ${CMAKE_SOURCE_DIR}/source/pio_one_wire_serial.cpp
         ${CMAKE_SOURCE_DIR}/source/one_wire.cpp
         ${CMAKE_SOURCE_DIR}/source/one_wire_device.cpp
+        ${CMAKE_SOURCE_DIR}/source/distance_sensor.cpp
         )
 
 pico_set_program_name(mini-sumo-v1 "mini-sumo-v1")

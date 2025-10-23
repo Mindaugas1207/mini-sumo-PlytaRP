@@ -41,13 +41,34 @@ void PioOneWireSerial::init(void)
     pio_sm_set_enabled(pio, sm_tx, true);
     pio_sm_set_enabled(pio, sm_rx, false);
 }
+
+void PioOneWireSerial::setBaudrate(int baud)
+{
+    pio_sm_set_enabled(pio, sm_tx, false);
+    pio_sm_set_enabled(pio, sm_rx, false);
+    float div = (float)clock_get_hz(clk_sys) / (8 * baud);
+    pio_sm_set_clkdiv(pio, sm_tx, div);
+    pio_sm_set_clkdiv(pio, sm_rx, div);
+    pio_sm_restart(pio, sm_tx);
+    pio_sm_restart(pio, sm_rx);
+    pio_sm_set_enabled(pio, sm_tx, true);
+    pio_sm_set_enabled(pio, sm_rx, false);
+    this->baud = baud;
+}
+
 void PioOneWireSerial::listen(bool enable)
 {
     if (enable)
     {
-        pio_sm_restart(pio, sm_rx);
+        uint32_t SM_STALL_MASK = 1u << (PIO_FDEBUG_TXSTALL_LSB + sm_tx);
+        pio->fdebug |= SM_STALL_MASK;   
+        while (!(pio->fdebug & SM_STALL_MASK)); {} //wait for tx to stall
+        pio_sm_set_enabled(pio, sm_rx, true);
     }
-    pio_sm_set_enabled(pio, sm_rx, enable);
+    else
+    {
+        pio_sm_set_enabled(pio, sm_rx, false);
+    }
 }
 bool PioOneWireSerial::available(void)
 {
@@ -62,14 +83,14 @@ void PioOneWireSerial::putc(char c)
 {
     pio_sm_put_blocking(pio, sm_tx, (uint32_t)c);
 }
-void PioOneWireSerial::write(char *buffer, int len)
+void PioOneWireSerial::write(const char *buffer, int len)
 {
     for (int i = 0; i < len; i++)
     {
         putc(buffer[i]);
     }
 }
-void PioOneWireSerial::write(char *string)
+void PioOneWireSerial::write(const char *string)
 {
     while (*string)
     {
@@ -84,7 +105,7 @@ int PioOneWireSerial::readUntil(char *buf, int len, char stopChar, int timeout_m
     {
         while (!available())
         {
-            if (absolute_time_diff_us(start, get_absolute_time()) > timeout_ms * 1000)
+            if ((timeout_ms != -1) && (absolute_time_diff_us(start, get_absolute_time()) > (timeout_ms * 1000)))
             {
                 return count;
             }
