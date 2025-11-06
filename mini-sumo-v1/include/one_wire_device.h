@@ -90,6 +90,13 @@ public:
      * \return true if the command was acknowledged, false on error
      */
     bool resetConfiguration(void);
+
+    bool restartDevice(void);
+
+    bool readId(uint8_t* id);
+
+    bool writeLock(uint8_t* lock);
+    bool lock(void);
 };
 
 #endif // ONE_WIRE_DEVICE_H

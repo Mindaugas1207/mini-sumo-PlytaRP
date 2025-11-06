@@ -84,6 +84,8 @@ public:
     */
     int getRangeTiming_ms(void);
 
+    int getRangeLinearCorrection(void);
+
     /*! \brief Get the range offset
      * \return Offset in mm, or -1 on error
     */
@@ -127,6 +129,8 @@ public:
      * \return true if the command was acknowledged, false on error
     */
     bool setRangeTiming_ms(uint timing);
+
+    bool setRangeLinearCorrection(uint correction);
 
     /*! \brief Set the range offset
      * \param offset Offset in mm (-32768 to 32767)

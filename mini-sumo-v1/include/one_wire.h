@@ -12,7 +12,7 @@ private:
     int timeout_ms;
 
 public:
-    OneWire(Serial &serial, int timeout_ms = 5, char terminator = '\n');
+    OneWire(Serial &serial, int timeout_ms = 50, char terminator = '\n');
     void init(void);
     void setBaudrate(int baud);
     int getBaudrate(void);

@@ -10,6 +10,8 @@ private:
 
     bool slowDecayA;
     bool slowDecayB;
+    bool invertA;
+    bool invertB;
 
     uint pinPWMA;
     uint pinPWMB;
@@ -26,7 +28,7 @@ private:
     uint frequency;
     uint16_t pwmPeriod;
 public:
-    MotorDriver(uint pinPWMA, uint pinPWMB, uint pinDIRA, uint pinDIRB, uint pinINVA, uint pinINVB, uint frequency = 20000, bool slowDecayA = true, bool slowDecayB = true);
+    MotorDriver(uint pinPWMA, uint pinPWMB, uint pinDIRA, uint pinDIRB, uint pinINVA, uint pinINVB, uint frequency = 20000, bool slowDecayA = true, bool slowDecayB = true, bool invertA = false, bool invertB = false);
     void init(void);
     void enable(void);
     void disable(void);

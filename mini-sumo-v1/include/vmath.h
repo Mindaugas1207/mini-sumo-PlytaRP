@@ -4,6 +4,7 @@
 
 #include "pico/stdlib.h"
 #include <math.h>
+#include <array>
 #include <tuple>
 #include <algorithm>
 #include <cstdint>
@@ -39,16 +40,14 @@ namespace vmath
         return x - (T)M_PI;
     }
 
-    template <typename T = double> inline T AngleDifference(T from, T to) {
-        T d = to - from;
-        d = d > (T)M_PI ? d - (T)(2 * M_PI) : (d < (T)(-M_PI) ? d + (T)(2 * M_PI) : d);
-        return d;
+    template <typename T = double> inline T UnwrapAngle(T angle) {
+        if (angle > (T)M_PI) return angle - (T)(M_PI*2);
+        else if (angle < (T)(-M_PI)) return angle + (T)(M_PI*2);
+        else return angle;
     }
 
-    template <typename T = double> inline T UnwrapAngle(T previous_angle, T new_angle) {
-        T d = new_angle - previous_angle;
-        d = d > (T)M_PI ? d - (T)(2 * M_PI) : (d < (T)(-M_PI) ? d + (T)(2 * M_PI) : d);
-        return previous_angle + d;
+    template <typename T = double> inline T AngleDifference(T from, T to) {
+        return UnwrapAngle(to - from);
     }
 
     template <typename T = double, size_t c = 3, size_t r = 3>
@@ -207,6 +206,18 @@ namespace vmath
         template <typename Tr> friend quat_t operator/ (quat_t lhs, const Tr& rhs) { lhs /= rhs; return lhs; }
 
         quat_t& Normalize(void) { return *this *= Inv_sqrt(this->W * this->W + this->X * this->X + this->Y * this->Y + this->Z * this->Z); }
+
+        quat_t Multiply(const quat_t& rhs)
+        {
+            quat_t result;
+
+            result.W = this->W * rhs.W - this->X * rhs.X - this->Y * rhs.Y - this->Z * rhs.Z;
+            result.X = this->X * rhs.W + this->W * rhs.X + this->Y * rhs.Z - this->Z * rhs.Y;
+            result.Y = this->W * rhs.Y - this->X * rhs.Z + this->Y * rhs.W + this->Z * rhs.X;
+            result.Z = this->W * rhs.Z + this->X * rhs.Y - this->Y * rhs.X + this->Z * rhs.W;
+
+            return result;
+        }
         
         rotMatrix_t<T> RotationMatrix(void)
         {
@@ -223,7 +234,7 @@ namespace vmath
             zz = this->Z * this->Z;
             zw = this->Z * this->W;
             
-            _Matrix[0][0] = ((T)0.5 -  yy - zz);//
+            _Matrix[0][0] = (T)1 -  (2 * (yy - zz));//
             _Matrix[0][1] =           (xy - zw);
             _Matrix[0][2] =           (xz + yw);
 
@@ -241,15 +252,26 @@ namespace vmath
         static vect_t<T> EulerAngles(const rotMatrix_t<T>& _Rotation)
         {
             return {
-                atan2f(_Rotation[2][1], _Rotation[2][2]), //Roll
+                atan2(_Rotation[2][1], _Rotation[2][2]), //Roll
                 asinf((T)(-2.0) * _Rotation[2][0]), //Pitch
-                atan2f(_Rotation[1][0], _Rotation[0][0]) //Yaw
+                atan2(2*_Rotation[1][0], _Rotation[0][0]) //Yaw
             };
         }
 
         vect_t<T> EulerAngles(void) { return EulerAngles(RotationMatrix()); }
     };
-
+/*
+    quat_t<double> quaternionFromRotationZ(double angle)
+    {
+        quat_t result;
+        result.W = cos(angle / 2.0);
+        double c = sin(angle / 2.0);
+        result.X = 0;
+        result.Y = 0;
+        result.Z = c;
+        return result;
+    }
+*/
     template <typename T = double>
     struct MadgwickFilter
     {

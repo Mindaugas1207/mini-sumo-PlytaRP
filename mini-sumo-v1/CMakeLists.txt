@@ -2,8 +2,8 @@
 
 cmake_minimum_required(VERSION 3.13)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Initialise pico_sdk from installed location
@@ -43,6 +43,11 @@ ${CMAKE_SOURCE_DIR}/source/motor_driver.cpp
         ${CMAKE_SOURCE_DIR}/source/one_wire.cpp
         ${CMAKE_SOURCE_DIR}/source/one_wire_device.cpp
         ${CMAKE_SOURCE_DIR}/source/distance_sensor.cpp
+        ${CMAKE_SOURCE_DIR}/source/line_sensor.cpp
+        ${CMAKE_SOURCE_DIR}/source/ir_receiver.cpp
+        ${CMAKE_SOURCE_DIR}/source/pio_ws2812.cpp
+        ${CMAKE_SOURCE_DIR}/source/imu.cpp
+        ${CMAKE_SOURCE_DIR}/source/madgwickFilter.cpp
         )
 
 pico_set_program_name(mini-sumo-v1 "mini-sumo-v1")
@@ -50,6 +55,7 @@ pico_set_program_version(mini-sumo-v1 "0.1")
 
 # Generate PIO header
 pico_generate_pio_header(mini-sumo-v1 ${CMAKE_CURRENT_LIST_DIR}/one_wire.pio)
+pico_generate_pio_header(mini-sumo-v1 ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(mini-sumo-v1 0)
@@ -57,7 +63,8 @@ pico_enable_stdio_usb(mini-sumo-v1 1)
 
 # Add the standard library to the build
 target_link_libraries(mini-sumo-v1
-        pico_stdlib)
+        pico_stdlib
+        )
 
 # Add the standard include files to the build
 target_include_directories(mini-sumo-v1 PRIVATE
@@ -70,6 +77,9 @@ target_link_libraries(mini-sumo-v1
         hardware_i2c
         hardware_pio
         hardware_pwm
+        hardware_flash 
+        hardware_sync 
+        pico_multicore
         )
 
 pico_add_extra_outputs(mini-sumo-v1)

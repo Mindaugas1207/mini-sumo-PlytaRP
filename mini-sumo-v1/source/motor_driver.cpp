@@ -7,7 +7,7 @@
 #include <hardware/pwm.h>
 #include <algorithm>
 
-MotorDriver::MotorDriver(uint pinPWMA, uint pinDIRA, uint pinINVA, uint pinPWMB, uint pinDIRB, uint pinINVB, uint frequency, bool slowDecayA, bool slowDecayB) : pinPWMA(pinPWMA), pinDIRA(pinDIRA), pinINVA(pinINVA), pinPWMB(pinPWMB), pinDIRB(pinDIRB), pinINVB(pinINVB), frequency(frequency), slowDecayA(slowDecayA), slowDecayB(slowDecayB)
+MotorDriver::MotorDriver(uint pinPWMA, uint pinDIRA, uint pinINVA, uint pinPWMB, uint pinDIRB, uint pinINVB, uint frequency, bool slowDecayA, bool slowDecayB, bool invertA, bool invertB) : pinPWMA(pinPWMA), pinDIRA(pinDIRA), pinINVA(pinINVA), pinPWMB(pinPWMB), pinDIRB(pinDIRB), pinINVB(pinINVB), frequency(frequency), slowDecayA(slowDecayA), slowDecayB(slowDecayB), invertA(invertA), invertB(invertB)
 {
     slice_num_A = pwm_gpio_to_slice_num(pinPWMA);
     slice_num_B = pwm_gpio_to_slice_num(pinPWMB);
@@ -56,7 +56,7 @@ void MotorDriver::setSpeedA(float speed)
     speedA = std::clamp(speed, -1.0f, 1.0f);
     uint16_t pwm = std::abs(speedA) * pwmPeriod;
 
-    gpio_put(pinDIRA, speedA >= 0 ? 0 : 1);
+    gpio_put(pinDIRA, speedA >= 0 ? invertA : !invertA);
     pwm_set_chan_level(slice_num_A, chan_A, pwm);
 }
 void MotorDriver::setSpeedB(float speed)
@@ -64,7 +64,7 @@ void MotorDriver::setSpeedB(float speed)
     speedB = std::clamp(speed, -1.0f, 1.0f);
     uint16_t pwm = std::abs(speedB) * pwmPeriod;
 
-    gpio_put(pinDIRB, speedB >= 0 ? 0 : 1);
+    gpio_put(pinDIRB, speedB >= 0 ? invertB : !invertB);
     pwm_set_chan_level(slice_num_B, chan_B, pwm);
 }
 void MotorDriver::setSpeed(float A, float B)

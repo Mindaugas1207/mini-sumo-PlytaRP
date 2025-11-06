@@ -15,10 +15,17 @@ private:
     uint sm_rx;
     uint pin;
     uint baud;
-
+    pio_sm_config c_tx;
+    pio_sm_config c_rx;
+    uint offset_tx;
+    uint offset_rx;
 public:
     PioOneWireSerial(PIO pio, uint sm_tx, uint sm_rx, uint pin, uint baud);
     void init(void);
+    void deinit(void);
+    void stop(void);
+    void start(void);
+    void changePin(uint pin);
     void listen(bool enable) override; 
     bool available(void) override;
     char getc(void) override;
