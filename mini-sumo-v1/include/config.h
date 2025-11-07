@@ -46,6 +46,8 @@
 #define I2C_SCL 23
 #define I2C_SPEED 1000000 //400kHz
 
+#define LSM6DSR_I2C I2C_PORT
+
 //DEBUG
 #define DEBUG 1
 #define DEBUG_UART uart0

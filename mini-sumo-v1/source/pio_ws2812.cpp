@@ -108,7 +108,7 @@ void WS2812_Pio::blinkBlocking(Color color_on, Color color_off, uint period_on, 
     if (count < 0) return;
     blink(color_on, color_off, period_on, period_off, count);
 
-    while (count > 0)
+    while (this->count > 0)
     {
         update();
     }

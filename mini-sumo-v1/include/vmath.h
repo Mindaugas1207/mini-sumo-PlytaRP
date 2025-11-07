@@ -11,7 +11,8 @@
 
 namespace vmath
 {
-    template <typename T = double, char iterations = 2> inline T Inv_sqrt(T x)
+    template <typename T = double, char iterations = 2>
+    inline T Inv_sqrt(T x)
     {
         static_assert(std::is_floating_point<T>::value, "T must be floating point");
         static_assert(iterations > 0, "itarations must be more than 0");
@@ -32,28 +33,47 @@ namespace vmath
         return y;
     }
 
-    template <typename T = double> inline T ConstrainAngle(T x)
+    template <typename T = double>
+    inline T ConstrainAngle(T x)
     {
         x = std::fmod(x + (T)M_PI, (T)(2 * M_PI));
 
-        if (x < 0) return x + (T)(M_PI);
+        if (x < 0)
+            return x + (T)(M_PI);
         return x - (T)M_PI;
     }
 
-    template <typename T = double> inline T UnwrapAngle(T angle) {
-        if (angle > (T)M_PI) return angle - (T)(M_PI*2);
-        else if (angle < (T)(-M_PI)) return angle + (T)(M_PI*2);
-        else return angle;
+    template <typename T = double>
+    inline T UnwrapAngle(T angle)
+    {
+        if (angle > (T)M_PI)
+            return angle - (T)(M_PI * 2);
+        else if (angle < (T)(-M_PI))
+            return angle + (T)(M_PI * 2);
+        else
+            return angle;
     }
 
-    template <typename T = double> inline T AngleDifference(T from, T to) {
+    template <typename T = double>
+    inline T UnwrapAngleDegrees(T angle)
+    {
+        if (angle > (T)180)
+            return angle - (T)(180 * 2);
+        else if (angle < (T)(-180))
+            return angle + (T)(180 * 2);
+        else
+            return angle;
+    }
+
+    template <typename T = double>
+    inline T AngleDifference(T from, T to)
+    {
         return UnwrapAngle(to - from);
     }
 
     template <typename T = double, size_t c = 3, size_t r = 3>
     struct matrix_t : std::array<std::array<T, c>, r>
     {
-
     };
 
     template <typename T = double>
@@ -61,60 +81,164 @@ namespace vmath
     {
         T X, Y, Z;
 
-        T& Roll()  { return this->X; }
-        T& Pitch() { return this->Y; }
-        T& Yaw()   { return this->Z; }
+        T &Roll() { return this->X; }
+        T &Pitch() { return this->Y; }
+        T &Yaw() { return this->Z; }
 
-        void Roll (const T& val) { this->X = val; }
-        void Pitch(const T& val) { this->Y = val; }
-        void Yaw  (const T& val) { this->Z = val; }
+        void Roll(const T &val) { this->X = val; }
+        void Pitch(const T &val) { this->Y = val; }
+        void Yaw(const T &val) { this->Z = val; }
 
-        vect_t& operator=  (const vect_t& rhs) { this->X  = rhs.X; this->Y  = rhs.Y; this->Z  = rhs.Z; return *this; }
-        vect_t& operator+= (const vect_t& rhs) { this->X += rhs.X; this->Y += rhs.Y; this->Z += rhs.Z; return *this; }
-        vect_t& operator-= (const vect_t& rhs) { this->X -= rhs.X; this->Y -= rhs.Y; this->Z -= rhs.Z; return *this; }
-        vect_t& operator*= (const vect_t& rhs) { this->X *= rhs.X; this->Y *= rhs.Y; this->Z *= rhs.Z; return *this; }
-        vect_t& operator/= (const vect_t& rhs) { this->X /= rhs.X; this->Y /= rhs.Y; this->Z /= rhs.Z; return *this; }
-        template <typename Tr> vect_t& operator=  (const Tr& rhs) { this->X  = rhs; this->Y  = rhs; this->Z  = rhs; return *this; }
-        template <typename Tr> vect_t& operator+= (const Tr& rhs) { this->X += rhs; this->Y += rhs; this->Z += rhs; return *this; }
-        template <typename Tr> vect_t& operator-= (const Tr& rhs) { this->X -= rhs; this->Y -= rhs; this->Z -= rhs; return *this; }
-        template <typename Tr> vect_t& operator*= (const Tr& rhs) { this->X *= rhs; this->Y *= rhs; this->Z *= rhs; return *this; }
-        template <typename Tr> vect_t& operator/= (const Tr& rhs) { this->X /= rhs; this->Y /= rhs; this->Z /= rhs; return *this; }
+        vect_t &operator=(const vect_t &rhs)
+        {
+            this->X = rhs.X;
+            this->Y = rhs.Y;
+            this->Z = rhs.Z;
+            return *this;
+        }
+        vect_t &operator+=(const vect_t &rhs)
+        {
+            this->X += rhs.X;
+            this->Y += rhs.Y;
+            this->Z += rhs.Z;
+            return *this;
+        }
+        vect_t &operator-=(const vect_t &rhs)
+        {
+            this->X -= rhs.X;
+            this->Y -= rhs.Y;
+            this->Z -= rhs.Z;
+            return *this;
+        }
+        vect_t &operator*=(const vect_t &rhs)
+        {
+            this->X *= rhs.X;
+            this->Y *= rhs.Y;
+            this->Z *= rhs.Z;
+            return *this;
+        }
+        vect_t &operator/=(const vect_t &rhs)
+        {
+            this->X /= rhs.X;
+            this->Y /= rhs.Y;
+            this->Z /= rhs.Z;
+            return *this;
+        }
+        template <typename Tr>
+        vect_t &operator=(const Tr &rhs)
+        {
+            this->X = rhs;
+            this->Y = rhs;
+            this->Z = rhs;
+            return *this;
+        }
+        template <typename Tr>
+        vect_t &operator+=(const Tr &rhs)
+        {
+            this->X += rhs;
+            this->Y += rhs;
+            this->Z += rhs;
+            return *this;
+        }
+        template <typename Tr>
+        vect_t &operator-=(const Tr &rhs)
+        {
+            this->X -= rhs;
+            this->Y -= rhs;
+            this->Z -= rhs;
+            return *this;
+        }
+        template <typename Tr>
+        vect_t &operator*=(const Tr &rhs)
+        {
+            this->X *= rhs;
+            this->Y *= rhs;
+            this->Z *= rhs;
+            return *this;
+        }
+        template <typename Tr>
+        vect_t &operator/=(const Tr &rhs)
+        {
+            this->X /= rhs;
+            this->Y /= rhs;
+            this->Z /= rhs;
+            return *this;
+        }
 
-        friend vect_t operator+ (vect_t lhs, const vect_t& rhs) { lhs += rhs; return lhs; }
-        friend vect_t operator- (vect_t lhs, const vect_t& rhs) { lhs -= rhs; return lhs; }
-        friend vect_t operator* (vect_t lhs, const vect_t& rhs) { lhs *= rhs; return lhs; }
-        friend vect_t operator/ (vect_t lhs, const vect_t& rhs) { lhs /= rhs; return lhs; }
-        template <typename Tr> friend vect_t operator+ (vect_t lhs, const Tr& rhs) { lhs += rhs; return lhs; }
-        template <typename Tr> friend vect_t operator- (vect_t lhs, const Tr& rhs) { lhs -= rhs; return lhs; }
-        template <typename Tr> friend vect_t operator* (vect_t lhs, const Tr& rhs) { lhs *= rhs; return lhs; }
-        template <typename Tr> friend vect_t operator/ (vect_t lhs, const Tr& rhs) { lhs /= rhs; return lhs; }
+        friend vect_t operator+(vect_t lhs, const vect_t &rhs)
+        {
+            lhs += rhs;
+            return lhs;
+        }
+        friend vect_t operator-(vect_t lhs, const vect_t &rhs)
+        {
+            lhs -= rhs;
+            return lhs;
+        }
+        friend vect_t operator*(vect_t lhs, const vect_t &rhs)
+        {
+            lhs *= rhs;
+            return lhs;
+        }
+        friend vect_t operator/(vect_t lhs, const vect_t &rhs)
+        {
+            lhs /= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend vect_t operator+(vect_t lhs, const Tr &rhs)
+        {
+            lhs += rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend vect_t operator-(vect_t lhs, const Tr &rhs)
+        {
+            lhs -= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend vect_t operator*(vect_t lhs, const Tr &rhs)
+        {
+            lhs *= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend vect_t operator/(vect_t lhs, const Tr &rhs)
+        {
+            lhs /= rhs;
+            return lhs;
+        }
 
         T Length() { return sqrt(this->X * this->X + this->Y * this->Y + this->Z * this->Z); }
 
-        static vect_t Cross(const vect_t& lhs, const vect_t& rhs)
+        static vect_t Cross(const vect_t &lhs, const vect_t &rhs)
         {
             return {
                 lhs.Y * rhs.Z - lhs.Z * rhs.Y,
                 lhs.Z * rhs.X - lhs.X * rhs.Z,
-                lhs.X * rhs.Y - lhs.Y * rhs.X
-            };
+                lhs.X * rhs.Y - lhs.Y * rhs.X};
         }
 
-        vect_t& Cross(const vect_t& rhs)
+        vect_t &Cross(const vect_t &rhs)
         {
             this->X = this->Y * rhs.Z - this->Z * rhs.Y;
             this->Y = this->Z * rhs.X - this->X * rhs.Z;
             this->Z = this->X * rhs.Y - this->Y * rhs.X;
             return *this;
         }
-        
-        vect_t& operator^= (const vect_t& rhs) { return Cross(rhs); }
 
-        friend vect_t operator^ (vect_t lhs, const vect_t& rhs) { lhs ^= rhs; return lhs; }
+        vect_t &operator^=(const vect_t &rhs) { return Cross(rhs); }
 
-        vect_t& Normalize(void) { return *this *= Inv_sqrt(X * X + Y * Y + Z * Z); }
+        friend vect_t operator^(vect_t lhs, const vect_t &rhs)
+        {
+            lhs ^= rhs;
+            return lhs;
+        }
 
-        vect_t& Rotate(const matrix_t<T, 3, 3>& _Rotation)
+        vect_t &Normalize(void) { return *this *= Inv_sqrt(X * X + Y * Y + Z * Z); }
+
+        vect_t &Rotate(const matrix_t<T, 3, 3> &_Rotation)
         {
             this->X = this->X * _Rotation[0][0] + this->Y * _Rotation[0][1] + this->Z * _Rotation[0][2];
             this->Y = this->X * _Rotation[1][0] + this->Y * _Rotation[1][1] + this->Z * _Rotation[1][2];
@@ -122,22 +246,14 @@ namespace vmath
             return *this *= (T)2.0;
         }
 
-        vect_t<T> AngleDifferenceFrom(const vect_t& from)
+        vect_t<T> AngleDifferenceFrom(const vect_t &from)
         {
             return {
                 AngleDifference(from.X, this->X),
                 AngleDifference(from.Y, this->Y),
-                AngleDifference(from.Z, this->Z)
-            };
+                AngleDifference(from.Z, this->Z)};
         }
     };
-
-    // struct matrix_s
-    // {
-    //     std::array<std::array<double, 3>, 3> mx;
-    // };
-
-    // typedef struct matrix_s matrix_t;
 
     template <typename T = double>
     struct rotMatrix_t : matrix_t<T, 3, 3>
@@ -163,12 +279,10 @@ namespace vmath
 
         double Determinant(void)
         {
-            return ((*this)[0][0] * ((*this)[1][1] * (*this)[2][2] - (*this)[1][2] * (*this)[2][1]))
-                 - ((*this)[0][1] * ((*this)[1][0] * (*this)[2][2] - (*this)[1][2] * (*this)[2][0]))
-                 + ((*this)[0][2] * ((*this)[1][0] * (*this)[2][1] - (*this)[1][1] * (*this)[2][0]));
+            return ((*this)[0][0] * ((*this)[1][1] * (*this)[2][2] - (*this)[1][2] * (*this)[2][1])) - ((*this)[0][1] * ((*this)[1][0] * (*this)[2][2] - (*this)[1][2] * (*this)[2][0])) + ((*this)[0][2] * ((*this)[1][0] * (*this)[2][1] - (*this)[1][1] * (*this)[2][0]));
         }
 
-        vect_t<T> RotateVector(const vect_t<T>& _Vector)
+        vect_t<T> RotateVector(const vect_t<T> &_Vector)
         {
             vect_t<T> _Result;
 
@@ -185,93 +299,169 @@ namespace vmath
     {
         T W, X, Y, Z;
 
-        quat_t& operator=  (const quat_t& rhs) { this->W  = rhs.W; this->X  = rhs.X; this->Y  = rhs.Y; this->Z  = rhs.Z; return *this; }
-        quat_t& operator+= (const quat_t& rhs) { this->W += rhs.W; this->X += rhs.X; this->Y += rhs.Y; this->Z += rhs.Z; return *this; }
-        quat_t& operator-= (const quat_t& rhs) { this->W -= rhs.W; this->X -= rhs.X; this->Y -= rhs.Y; this->Z -= rhs.Z; return *this; }
-        quat_t& operator*= (const quat_t& rhs) { this->W *= rhs.W; this->X *= rhs.X; this->Y *= rhs.Y; this->Z *= rhs.Z; return *this; }
-        quat_t& operator/= (const quat_t& rhs) { this->W /= rhs.W; this->X /= rhs.X; this->Y /= rhs.Y; this->Z /= rhs.Z; return *this; }
-        template <typename Tr> quat_t& operator=  (const Tr& rhs) { this->W  = rhs; this->X  = rhs; this->Y  = rhs; this->Z  = rhs; return *this; }
-        template <typename Tr> quat_t& operator+= (const Tr& rhs) { this->W += rhs; this->X += rhs; this->Y += rhs; this->Z += rhs; return *this; }
-        template <typename Tr> quat_t& operator-= (const Tr& rhs) { this->W -= rhs; this->X -= rhs; this->Y -= rhs; this->Z -= rhs; return *this; }
-        template <typename Tr> quat_t& operator*= (const Tr& rhs) { this->W *= rhs; this->X *= rhs; this->Y *= rhs; this->Z *= rhs; return *this; }
-        template <typename Tr> quat_t& operator/= (const Tr& rhs) { this->W /= rhs; this->X /= rhs; this->Y /= rhs; this->Z /= rhs; return *this; }
-
-        friend quat_t operator+ (quat_t lhs, const quat_t& rhs) { lhs += rhs; return lhs; }
-        friend quat_t operator- (quat_t lhs, const quat_t& rhs) { lhs -= rhs; return lhs; }
-        friend quat_t operator* (quat_t lhs, const quat_t& rhs) { lhs *= rhs; return lhs; }
-        friend quat_t operator/ (quat_t lhs, const quat_t& rhs) { lhs /= rhs; return lhs; }
-        template <typename Tr> friend quat_t operator+ (quat_t lhs, const Tr& rhs) { lhs += rhs; return lhs; }
-        template <typename Tr> friend quat_t operator- (quat_t lhs, const Tr& rhs) { lhs -= rhs; return lhs; }
-        template <typename Tr> friend quat_t operator* (quat_t lhs, const Tr& rhs) { lhs *= rhs; return lhs; }
-        template <typename Tr> friend quat_t operator/ (quat_t lhs, const Tr& rhs) { lhs /= rhs; return lhs; }
-
-        quat_t& Normalize(void) { return *this *= Inv_sqrt(this->W * this->W + this->X * this->X + this->Y * this->Y + this->Z * this->Z); }
-
-        quat_t Multiply(const quat_t& rhs)
+        quat_t &operator=(const quat_t &rhs)
         {
-            quat_t result;
-
-            result.W = this->W * rhs.W - this->X * rhs.X - this->Y * rhs.Y - this->Z * rhs.Z;
-            result.X = this->X * rhs.W + this->W * rhs.X + this->Y * rhs.Z - this->Z * rhs.Y;
-            result.Y = this->W * rhs.Y - this->X * rhs.Z + this->Y * rhs.W + this->Z * rhs.X;
-            result.Z = this->W * rhs.Z + this->X * rhs.Y - this->Y * rhs.X + this->Z * rhs.W;
-
-            return result;
+            this->W = rhs.W;
+            this->X = rhs.X;
+            this->Y = rhs.Y;
+            this->Z = rhs.Z;
+            return *this;
         }
-        
-        rotMatrix_t<T> RotationMatrix(void)
+        quat_t &operator+=(const quat_t &rhs)
         {
-            rotMatrix_t<T> _Matrix;
-            T xx, yy, zz, xy, xz, yz, xw, yw, zw;
-
-            xx = this->X * this->X;
-            xy = this->X * this->Y;
-            xz = this->X * this->Z;
-            xw = this->X * this->W;
-            yy = this->Y * this->Y;
-            yz = this->Y * this->Z;
-            yw = this->Y * this->W;
-            zz = this->Z * this->Z;
-            zw = this->Z * this->W;
-            
-            _Matrix[0][0] = (T)1 -  (2 * (yy - zz));//
-            _Matrix[0][1] =           (xy - zw);
-            _Matrix[0][2] =           (xz + yw);
-
-            _Matrix[1][0] =           (xy + zw);//
-            _Matrix[1][1] = ((T)0.5 -  xx - zz);
-            _Matrix[1][2] =           (yz - xw);
-
-            _Matrix[2][0] =           (xz - yw);//
-            _Matrix[2][1] =           (yz + xw);//
-            _Matrix[2][2] = ((T)0.5 -  xx - yy);//
-
-            return _Matrix;
+            this->W += rhs.W;
+            this->X += rhs.X;
+            this->Y += rhs.Y;
+            this->Z += rhs.Z;
+            return *this;
+        }
+        quat_t &operator-=(const quat_t &rhs)
+        {
+            this->W -= rhs.W;
+            this->X -= rhs.X;
+            this->Y -= rhs.Y;
+            this->Z -= rhs.Z;
+            return *this;
+        }
+        quat_t &operator*=(const quat_t &rhs)
+        {
+            quat_t lhs = *this;
+            this->W = (lhs.W * rhs.W) - (lhs.X * rhs.X) - (lhs.Y * rhs.Y) - (lhs.Z * rhs.Z);
+            this->X = (lhs.W * rhs.X) + (lhs.X * rhs.W) + (lhs.Y * rhs.Z) - (lhs.Z * rhs.Y);
+            this->Y = (lhs.W * rhs.Y) - (lhs.X * rhs.Z) + (lhs.Y * rhs.W) + (lhs.Z * rhs.X);
+            this->Z = (lhs.W * rhs.Z) + (lhs.X * rhs.Y) - (lhs.Y * rhs.X) + (lhs.Z * rhs.W);
+            return *this;
+        }
+        quat_t &operator/=(const quat_t &rhs)
+        {
+            this->W /= rhs.W;
+            this->X /= rhs.X;
+            this->Y /= rhs.Y;
+            this->Z /= rhs.Z;
+            return *this;
+        }
+        template <typename Tr>
+        quat_t &operator=(const Tr &rhs)
+        {
+            this->W = rhs;
+            this->X = rhs;
+            this->Y = rhs;
+            this->Z = rhs;
+            return *this;
+        }
+        template <typename Tr>
+        quat_t &operator+=(const Tr &rhs)
+        {
+            this->W += rhs;
+            this->X += rhs;
+            this->Y += rhs;
+            this->Z += rhs;
+            return *this;
+        }
+        template <typename Tr>
+        quat_t &operator-=(const Tr &rhs)
+        {
+            this->W -= rhs;
+            this->X -= rhs;
+            this->Y -= rhs;
+            this->Z -= rhs;
+            return *this;
+        }
+        template <typename Tr>
+        quat_t &operator*=(const Tr &rhs)
+        {
+            this->W *= rhs;
+            this->X *= rhs;
+            this->Y *= rhs;
+            this->Z *= rhs;
+            return *this;
+        }
+        template <typename Tr>
+        quat_t &operator/=(const Tr &rhs)
+        {
+            this->W /= rhs;
+            this->X /= rhs;
+            this->Y /= rhs;
+            this->Z /= rhs;
+            return *this;
         }
 
-        static vect_t<T> EulerAngles(const rotMatrix_t<T>& _Rotation)
+        friend quat_t operator+(quat_t lhs, const quat_t &rhs)
+        {
+            lhs += rhs;
+            return lhs;
+        }
+        friend quat_t operator-(quat_t lhs, const quat_t &rhs)
+        {
+            lhs -= rhs;
+            return lhs;
+        }
+        friend quat_t operator*(quat_t lhs, const quat_t &rhs)
+        {
+            lhs *= rhs;
+            return lhs;
+        }
+        friend quat_t operator/(quat_t lhs, const quat_t &rhs)
+        {
+            lhs /= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend quat_t operator+(quat_t lhs, const Tr &rhs)
+        {
+            lhs += rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend quat_t operator-(quat_t lhs, const Tr &rhs)
+        {
+            lhs -= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend quat_t operator*(quat_t lhs, const Tr &rhs)
+        {
+            lhs *= rhs;
+            return lhs;
+        }
+        template <typename Tr>
+        friend quat_t operator/(quat_t lhs, const Tr &rhs)
+        {
+            lhs /= rhs;
+            return lhs;
+        }
+
+        quat_t &Normalize(void) { return *this *= Inv_sqrt(this->W * this->W + this->X * this->X + this->Y * this->Y + this->Z * this->Z); }
+
+        quat_t Conjugate(void) { return {this->W, -this->X, -this->Y, -this->Z}; }
+
+        // Return Euler angles in radians
+        vect_t<T> EulerAngles(void)
         {
             return {
-                atan2(_Rotation[2][1], _Rotation[2][2]), //Roll
-                asinf((T)(-2.0) * _Rotation[2][0]), //Pitch
-                atan2(2*_Rotation[1][0], _Rotation[0][0]) //Yaw
+                atan2(2 * (W * X + Y * Z), 1.0 - 2 * (X * X + Y * Y)),                                     // Roll
+                -(M_PI / 2) + 2 * atan2(sqrt(1.0 + 2 * (W * Y - X * Z)), sqrt(1.0 - 2 * (W * Y - X * Z))), // Pitch
+                atan2(2 * (W * Z + X * Y), 1.0 - 2 * (Y * Y + Z * Z))                                      // Yaw
             };
         }
 
-        vect_t<T> EulerAngles(void) { return EulerAngles(RotationMatrix()); }
+        vect_t<T> EulerAnglesDegrees(void)
+        {
+            return EulerAngles() * (T)(180.0 / M_PI);
+        }
     };
-/*
-    quat_t<double> quaternionFromRotationZ(double angle)
-    {
-        quat_t result;
-        result.W = cos(angle / 2.0);
-        double c = sin(angle / 2.0);
-        result.X = 0;
-        result.Y = 0;
-        result.Z = c;
-        return result;
-    }
-*/
+    /*
+        quat_t<double> quaternionFromRotationZ(double angle)
+        {
+            quat_t result;
+            result.W = cos(angle / 2.0);
+            double c = sin(angle / 2.0);
+            result.X = 0;
+            result.Y = 0;
+            result.Z = c;
+            return result;
+        }
+    */
     template <typename T = double>
     struct MadgwickFilter
     {
@@ -282,56 +472,70 @@ namespace vmath
         void Init()
         {
             beta = (T)0.0;
-            q = { (T)1.0, (T)0.0, (T)0.0, (T)0.0 };
+            q = {(T)1.0, (T)0.0, (T)0.0, (T)0.0};
         }
 
         void Init(T _beta)
         {
             beta = _beta;
-            q = { (T)1.0, (T)0.0, (T)0.0, (T)0.0 };
+            q = {(T)1.0, (T)0.0, (T)0.0, (T)0.0};
         }
 
         void Reset(void)
         {
-            q = { (T)1.0, (T)0.0, (T)0.0, (T)0.0 };
+            q = {(T)1.0, (T)0.0, (T)0.0, (T)0.0};
         }
 
-        void SetBeta(const T& _beta) { beta = _beta; }
-        T& GetBeta(void)             { return beta;  }
+        void SetBeta(const T &_beta) { beta = _beta; }
+        T &GetBeta(void) { return beta; }
 
-        quat_t<T> Compute(vect_t<T> gyro, vect_t<T> accel, T dt) {
+        quat_t<T> Compute(vect_t<T> gyro, vect_t<T> accel, T dt)
+        {
+            quat_t<T> qDot;
+            quat_t<T> grad;
+            quat_t<T> q_w = {0, gyro.X, gyro.Y, gyro.Z}; // Place gyroscope rates into quaternion form
+            T F_g[3] = {0};
+            T J_g[3][4] = {0};
 
-            quat_t<T> grad, qDot;
-            // Rate of change of quaternion from gyroscope
-            qDot.W = -q.X * gyro.X - q.Y * gyro.Y - q.Z * gyro.Z;
-            qDot.X =  q.W * gyro.X + q.Y * gyro.Z - q.Z * gyro.Y;
-            qDot.Y =  q.W * gyro.Y - q.X * gyro.Z + q.Z * gyro.X;
-            qDot.Z =  q.W * gyro.Z + q.X * gyro.Y - q.Y * gyro.X;
-            qDot *= (T)0.5;
+            accel.Normalize();
 
-            // Compute feedback only if accelerometer measurement valid (avoids NaN in accelerometer normalisation)
-            if(!(accel.X == (T)0.0 && accel.Y == (T)0.0 && accel.Z == (T)0.0))
-            {
-                // Normalise accelerometer measurement
-                accel.Normalize();
-                // Auxiliary variables to avoid repeated arithmetic
-                T tmp_2yyxx = 2 * q.Y * q.Y + q.X * q.X;
-                T tmp_z = 1 + tmp_2yyxx + accel.Z;
-                // Gradient decent algorithm corrective step
-                grad.W = q.W * tmp_2yyxx + q.Y * accel.X - q.X * accel.Y;
-                grad.Z = q.Z * tmp_2yyxx - q.X * accel.X - q.Y * accel.Y;
-                grad.X = q.Z * (2 * q.X * q.Z - accel.X) + q.W * (2 * q.W * q.X - accel.Y) - 2 * q.X * tmp_z;
-                grad.Y = q.W * (2 * q.W * q.Y + accel.X) + q.Z * (2 * q.Y * q.Z - accel.Y) - 2 * q.Y * tmp_z;
-                //grad *= 2; //Can skip this step because of normalization below
+            // Objective function for gravity
+            F_g[0] = 2 * (q.X * q.Z - q.W * q.Y) - accel.X;
+            F_g[1] = 2 * (q.W * q.X + q.Y * q.Z) - accel.Y;
+            F_g[2] = 2 * ((T)0.5 - q.X * q.X - q.Y * q.Y) - accel.Z;
 
-                grad.Normalize();
-                // Apply feedback step
-                qDot -= grad * beta;
-            }
+            // Jacobian matrix for gravity
+            J_g[0][0] = -2 * q.Y;
+            J_g[0][1] = 2 * q.Z;
+            J_g[0][2] = -2 * q.W;
+            J_g[0][3] = 2 * q.X;
 
-            // Integrate rate of change of quaternion to yield quaternion
-            q += qDot * dt;
-            // Normalise quaternion
+            J_g[1][0] = 2 * q.X;
+            J_g[1][1] = 2 * q.W;
+            J_g[1][2] = 2 * q.Z;
+            J_g[1][3] = 2 * q.Y;
+
+            // J_g[2][0] = 0;
+            J_g[2][1] = -4 * q.X;
+            J_g[2][2] = -4 * q.Y;
+            // J_g[2][3] = 0;
+
+            // Compute gradient
+            grad.W = J_g[0][0] * F_g[0] + J_g[1][0] * F_g[1]; // + J_g[2][0] * F_g[2];
+            grad.X = J_g[0][1] * F_g[0] + J_g[1][1] * F_g[1] + J_g[2][1] * F_g[2];
+            grad.Y = J_g[0][2] * F_g[0] + J_g[1][2] * F_g[1] + J_g[2][2] * F_g[2];
+            grad.Z = J_g[0][3] * F_g[0] + J_g[1][3] * F_g[1]; // + J_g[2][3] * F_g[2];
+
+            grad.Normalize();
+            grad *= beta;
+
+            // Integrate anglar rate
+            q_w = q * (q_w * (T)0.5);
+            // Apply gradient descent correction
+            q_w -= grad;
+            // Integrate to yield orientation
+            q += q_w * dt;
+
             q.Normalize();
 
             return q;

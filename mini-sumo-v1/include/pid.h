@@ -13,6 +13,7 @@ class PID
 private:
     double lastInput;
     double integral;
+    bool first = true;
 
 public:
     double kp;
@@ -27,6 +28,10 @@ public:
 
     double compute(double setpoint, double input, double dt)
     {
+        if (first)
+        {
+            lastInput = input;
+        }
         double error = setpoint - input;
         if (std::abs(error) < minError) error = 0;
         integral = std::clamp(integral + error * ki * dt, -integralLimit, integralLimit);
@@ -38,6 +43,10 @@ public:
 
     double compute_radians(double setpoint, double input, double dt)
     {
+        if (first)
+        {
+            lastInput = input;
+        }
         double error = vmath::UnwrapAngle(setpoint - input); //[-pi, +pi]
         if (std::abs(error) < minError) error = 0;
         integral = std::clamp(integral + error * ki * dt, -integralLimit, integralLimit); //[-1, +1]
@@ -47,8 +56,24 @@ public:
         return output;
     }
 
+    double compute_degrees(double setpoint, double input, double dt)
+    {
+        if (first)
+        {
+            lastInput = input;
+        }
+        double error = vmath::UnwrapAngleDegrees(setpoint - input); //[-pi, +pi]
+        if (std::abs(error) < minError) error = 0;
+        integral = std::clamp(integral + error * ki * dt, -integralLimit, integralLimit); //[-1, +1]
+        double derivative = vmath::UnwrapAngleDegrees(input - lastInput) * kd / dt; //[-1, +1]
+        double output = std::clamp(kp * error + integral + derivative, -1.0, 1.0); //[-1, +1]
+        lastInput = input;
+        return output;
+    }
+
     void reset(void)
     {
+        first = true;
         lastInput = 0;
         integral = 0;
     }
@@ -75,7 +100,7 @@ public:
         double d = std::abs(target - current);
         //printf("%f\n", d);
         
-        if (std::abs(current) < (min - 0.01))
+        /*if (std::abs(current) < (min - 0.01))
         {
             if (std::abs(target) < (min - 0.01))
             {
@@ -86,8 +111,8 @@ public:
                 if (target < 0) current = -min;
                 else current = min;
             }
-        }
-        else if (d < 0.01) 
+        }*/
+        if (d < 0.01) 
         {
             current = target;
         }
