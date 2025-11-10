@@ -33,6 +33,7 @@
 #define SENSOR_PIN_LINE_3 7 //back
 
 #define RECEIVER_PIN 8
+#define FLAG_PIN 6
 
 //LED
 #define LED_PIN 24

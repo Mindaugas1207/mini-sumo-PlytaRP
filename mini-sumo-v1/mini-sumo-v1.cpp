@@ -131,6 +131,7 @@ PioOneWireSerial pioOneWireSerial2(pio1, 0, 1, SENSOR_PIN6, 115200);
 OneWire oneWire0(pioOneWireSerial0);
 
 IrReceiver receiver(oneWire0, 0);
+OneWireDevice flgaModule(oneWire0, 0);
 
 MotorDriver driver(MOTOR_DRIVER_PWMA, MOTOR_DRIVER_DIRA, MOTOR_DRIVER_INVA, MOTOR_DRIVER_PWMB, MOTOR_DRIVER_DIRB, MOTOR_DRIVER_INVB, MOTOR_DRIVER_FREQUENCY, true, true, true, false);
 
@@ -685,6 +686,10 @@ void handle_idle(void)
 
     if (gpio_get(START_PIN) && gpio_get(MOTOR_DRIVER_ENABLE))
     {
+        pioOneWireSerial0.changePin(FLAG_PIN);
+        flgaModule.begin();
+        flgaModule.writeRegister(2,1);
+
         tactic_select(tactic);
         yaw_timestamp = get_absolute_time();
         target_yaw = robot_state.orientation.Z;
@@ -898,6 +903,7 @@ void handle_fight(void)
 
 void handle_stop(void)
 {
+    flgaModule.writeRegister(2,0);
     driver.stop();
 }
 
