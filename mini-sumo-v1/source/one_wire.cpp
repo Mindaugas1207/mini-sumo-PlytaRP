@@ -16,8 +16,11 @@ void OneWire::setBaudrate(int baud)
 }
 int OneWire::getBaudrate(void)
 {
-    // Not implemented
-    return 0;
+    return serial.getBaudrate();
+}
+void OneWire::changePin(uint pin, bool forced)
+{
+    serial.changePin(pin, forced);
 }
 void OneWire::write(const char *string)
 {

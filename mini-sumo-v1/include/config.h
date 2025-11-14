@@ -3,7 +3,7 @@
 #define CONFIG_H
 
 //MOTOR DRIVER
-#define MOTOR_DRIVER_FREQUENCY 10000 //20kHz
+#define MOTOR_DRIVER_FREQUENCY 20000 //20kHz
 #define MOTOR_DRIVER_PWMA 16
 #define MOTOR_DRIVER_DIRA 18
 #define MOTOR_DRIVER_INVA 0
@@ -16,6 +16,20 @@
 
 //SENSORS
 #define SENSORS_ENABLE 20
+
+
+#define SENSOR_LEFT_90 0
+#define SENSOR_LEFT_45 1
+#define SENSOR_LEFT_27 2
+#define SENSOR_LEFT_18 3
+#define SENSOR_LEFT_0 4
+#define SENSOR_CENTER_0 5
+#define SENSOR_RIGHT_0 6
+#define SENSOR_RIGHT_18 7
+#define SENSOR_RIGHT_27 8
+#define SENSOR_RIGHT_45 9
+#define SENSOR_RIGHT_90 10
+
 #define SENSOR_PIN1 0 //45 right
 #define SENSOR_PIN2 1 //90 right
 #define SENSOR_PIN3 2 //0 right
@@ -28,9 +42,53 @@
 #define SENSOR_PIN10 11 //90 left
 #define SENSOR_PIN11 10 //45 left
 
+#define DISTANCE_SENSOR_COUNT 11
+
+static const uint distance_sensor_pins[DISTANCE_SENSOR_COUNT] = {
+    SENSOR_PIN10, //90L
+    SENSOR_PIN11, //45L
+    SENSOR_PIN5, //27L
+    SENSOR_PIN4, //18L
+    SENSOR_PIN9, //0L
+    SENSOR_PIN6, //0
+    SENSOR_PIN3, //0R
+    SENSOR_PIN8, //18R
+    SENSOR_PIN7, //27R
+    SENSOR_PIN1, //45R
+    SENSOR_PIN2 //90R
+};
+
+static const double sensor_angles[] = {
+    -90.0, //90 left
+    -45.0, //45 left
+    -27.0, //27 left
+    -18.0, //18 left
+    -5.0, //0 left
+    0.0, //center
+    5.0, //0 right
+    18.0, //18 right
+    27.0, //27 right
+    45.0, //45 right
+    90.0//90 right
+};
+
+#define DISTANCE_READ_TIME (33 * 1000)
+
+#define LINE_SENSOR_FRONT_LEFT 0
+#define LINE_SENSOR_FRONT_RIGHT 1
+#define LINE_SENSOR_BACK 2
+
 #define SENSOR_PIN_LINE_1 5 //right
 #define SENSOR_PIN_LINE_2 14 //left
 #define SENSOR_PIN_LINE_3 7 //back
+
+#define LINE_SENSOR_COUNT 3
+
+static const uint line_sensor_pins[LINE_SENSOR_COUNT] = {
+    SENSOR_PIN_LINE_2, //L
+    SENSOR_PIN_LINE_1, //R
+    SENSOR_PIN_LINE_3 //B
+};
 
 #define RECEIVER_PIN 8
 #define FLAG_PIN 6

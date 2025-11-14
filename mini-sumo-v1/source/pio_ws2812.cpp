@@ -45,6 +45,13 @@ void WS2812_Pio::set(Color c)
     blinking = false;
 }
 
+void WS2812_Pio::setBlocking(Color c)
+{
+    this->color_off = c;
+    blinking = false;
+    update();
+}
+
 void WS2812_Pio::_set(uint32_t grbw)
 {
     if (color == grbw) return;

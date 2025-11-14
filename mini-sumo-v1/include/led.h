@@ -42,6 +42,7 @@ private:
     
 public:
     virtual void set(Color c){}
+    virtual void setBlocking(Color c){};
     virtual void update(void){}
     virtual void blink(Color color_on, Color color_off, uint period_on, uint period_off, int count){}
     virtual void blinkBlocking(Color color_on, Color color_off, uint period_on, uint period_off, int count){}

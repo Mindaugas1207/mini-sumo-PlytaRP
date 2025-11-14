@@ -16,6 +16,7 @@ public:
     void init(void);
     void setBaudrate(int baud);
     int getBaudrate(void);
+    void changePin(uint pin, bool forced = false);
     void write(const char *string);
     void write(const char *buffer, int length);
     int read(char *buffer, int maxLength);

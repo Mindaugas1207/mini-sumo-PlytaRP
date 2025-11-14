@@ -13,6 +13,8 @@ public:
     virtual void listen(bool enable){};
     virtual int readUntil(char *buf, int len, char stopChar, int timeout_ms){return 0;};
     virtual void setBaudrate(int baud){};
+    virtual uint getBaudrate(void){return 0;};
+    virtual void changePin(uint pin, bool forced){};
 };
 
 #endif // SERIAL_H

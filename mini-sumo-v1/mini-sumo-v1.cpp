@@ -10,7 +10,7 @@
 #include "pico/sem.h"
 #include "pico/multicore.h"
 
-#include "config.h"
+
 #include "system.h"
 #include "one_wire.pio.h"
 #include "motor_driver.h"
@@ -30,9 +30,71 @@
 #include "lsm6dsr.h"
 #include "imu.h"
 
-#include "nvm.hpp"
+#include "nvm.h"
 #include "pid.h"
 #include "async_imu.h"
+#include "config.h"
+#include "state_machine.h"
+
+struct DistanceSensorConfig_s
+{
+    uint min = 1;
+    uint max = 400;
+    int offset = 0;
+    double linearCorrection = 1;
+    uint timing_ms = 33;
+    OneWireDevice::DeviceSerialBaudRate baud = OneWireDevice::DeviceSerialBaudRate::SERIAL_BAUD_115200;
+    OneWireDevice::DeviceIOMode ioMode = OneWireDevice::DeviceIOMode::IOMODE_SERIAL;
+    uint serialIndex = 0;
+};
+
+static const DistanceSensorConfig_s distance_sensor_configurations[DISTANCE_SENSOR_COUNT]
+{
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    },
+    {
+        1,//uint min;
+        600,//uint max;
+    }
+};
 
 LSM6DSR imu = LSM6DSR(LSM6DSR_I2C);
 
@@ -51,58 +113,19 @@ NVM_s NVM;
 void SaveConfig(void);
 void LoadConfig(void);
 
-
+void configure_sensors(void);
+bool distance_sensor_configure(size_t i, DistanceSensorConfig_s& config);
+void calibrate_line_sensor(size_t i, uint duration_ms);
+void do_imu_calibration(void);
+void do_line_calibration(void);
+void sensor_restart_serial(uint pin);
+void sensor_restart_digital(uint pin);
+bool init_sensors(void);
 
 void io_init(void);
 
-
-
-void flag_down()
-{
-    gpio_set_dir(6, GPIO_OUT);
-    sleep_ms(150);
-    gpio_set_dir(6, GPIO_IN);
-}
-
-
-const uint sensor_pins[] = {
-    SENSOR_PIN1,
-    SENSOR_PIN2,
-    SENSOR_PIN3,
-    SENSOR_PIN4,
-    SENSOR_PIN5,
-    SENSOR_PIN6,
-    SENSOR_PIN7,
-    SENSOR_PIN8,
-    SENSOR_PIN9,
-    SENSOR_PIN10,
-    SENSOR_PIN11,
-    SENSOR_PIN_LINE_1,
-    SENSOR_PIN_LINE_2,
-    SENSOR_PIN_LINE_3
-};
-
 #define deg_to_radian(deg) ((deg) * M_PI / 180.0)
 #define rad_to_degree(rad) ((rad) * 180.0 / M_PI)
-
-const double sensor_angles[] = {
-    90.0, //90 left
-    45.0, //45 left
-    27.0, //27 left
-    18.0, //18 left
-    5.0, //0 left
-    0.0, //center
-    -5.0, //0 right
-    -18.0, //18 right
-    -27.0, //27 right
-    -45.0, //45 right
-    -90.0//90 right
-};
-
-constexpr size_t sensor_count = sizeof(sensor_pins) / sizeof(sensor_pins[0]);
-constexpr size_t ls_index = sensor_count - 3;
-
-
 
 #define COMMAND_1 (1)
 #define COMMAND_2 (2)
@@ -113,491 +136,719 @@ constexpr size_t ls_index = sensor_count - 3;
 
 #define LINE_CALIBRATION_TIME (5000)
 
-enum SUMO_STATES
-{
-    SUMO_IDLE,
-    SUMO_FIGHT,
-    SUMO_STOP
-};
+#define SENSOR_RANGE_LONG 450
+#define SENSOR_RANGE_SHORT 100
+#define SENSOR_RANGE_PUSH 5
 
-SUMO_STATES sumo_state = SUMO_IDLE;
+constexpr double alignment_accuracy_deg = 2;
+constexpr int alignment_time = 100 * 1000;
+constexpr double max_speed = 1.0;
+constexpr double min_speed = 0.06;
 
-WS2812_Pio STATUS_Led(pio2, 0, LED_PIN);
+constexpr double max_turn_speed = 0.5;
 
-PioOneWireSerial pioOneWireSerial0(pio0, 0, 1, RECEIVER_PIN, 9600);
-PioOneWireSerial pioOneWireSerial1(pio0, 2, 3, SENSOR_PIN11, 9600);
-PioOneWireSerial pioOneWireSerial2(pio1, 0, 1, SENSOR_PIN6, 115200);
+constexpr double turn_bias = 0.0; //+ more forward, - more backward
+constexpr double turn_linear_ratio = 0.0; //+ more linear, - more turn
 
-OneWire oneWire0(pioOneWireSerial0);
+constexpr double ramp_frequency = 10000; //Hz
+constexpr double ramp_rate = min_speed; //0-1
+constexpr double ramp_min = min_speed; //0-1
 
-IrReceiver receiver(oneWire0, 0);
-OneWireDevice flgaModule(oneWire0, 0);
+constexpr double pid_Gain = 0.45 / 180.0;
+constexpr double pid_Ti = 0.25; //s
+constexpr double pid_Td = 400; //s
+constexpr double pid_feedforward = min_speed;
+constexpr double pid_Kp = pid_Gain;
+constexpr double pid_Ki = pid_Kp / pid_Ti;
+constexpr double pid_Kd = pid_Kp * pid_Td;
+constexpr double pid_integral_limit = min_speed;
+constexpr double pid_min_error = 0;
 
+
+WS2812_Pio STATUS_Led(pio2, 3, LED_PIN);
 MotorDriver driver(MOTOR_DRIVER_PWMA, MOTOR_DRIVER_DIRA, MOTOR_DRIVER_INVA, MOTOR_DRIVER_PWMB, MOTOR_DRIVER_DIRB, MOTOR_DRIVER_INVB, MOTOR_DRIVER_FREQUENCY, true, true, true, false);
+Ramp rampA(1.0 / ramp_frequency, ramp_rate, ramp_min);
+Ramp rampB(1.0 / ramp_frequency, ramp_rate, ramp_min);
+PID turn_pid(pid_Kp, pid_Ki, pid_Kd, pid_integral_limit, pid_min_error);//PID yawPid = PID(0.65/180.0, 0.008, 0.012, 0.07, 0.0);
 
-class RobotState
+PioOneWireSerial pioOneWire0(pio0, 0, 1, SENSOR_PIN1, 115200);
+PioOneWireSerial pioOneWire1(pio0, 0, 1, RECEIVER_PIN, 9600);
+OneWire wire0(pioOneWire0);
+OneWire wire1(pioOneWire1);
+DistanceSensor distance_sensor(wire0, 0);
+IrReceiver receiver(wire1, 0);
+OneWireDevice flgaModule(wire1, 0);
+
+
+class Robot
 {
+private:
+    double driver_out_a_current = 0;
+    double driver_out_b_current = 0;
+
+    double yaw_angle_target_deg = 0;
+
+    double linear_speed_current = 0;
+    double linear_speed_target = 0;
+
+    bool track_yaw = false;
+    bool move_active = false;
+    //bool move_linear = false;
+    
+
+    absolute_time_t pid_timestamp = 0;
+    absolute_time_t move_timestamp = 0;
+    absolute_time_t alignment_timestamp = 0;
+    int move_timeout = 0;
+
+    double move_phase2_speed = 0;
+    double move_phase2_timeout = 0;
+    bool move_2phase = false;
+
+    bool aligned = false;
+
+    bool flags_are_down = false;
+
+    bool onLine = false;
+    bool lineLeftLast = false;
+    double lineRatio = 0;
+
+    bool detected_long = false;
+    bool detected_short = false;
+    bool detected_push = false;
+
+    double detected_angle_long = 0;
+    double detected_angle_short = 0;
+
+    bool turn_at_start = false;
+    int tactic = 0;
+    
+    void move_linear(double speed, int period);
+    void move_align(double angle, int period);
 public:
-    bool lineLeft = false;
-    bool lineRight = false;
-    bool lineBack = false;
+    bool start_input = false;
+    bool stop_input = false;
+    bool stop_software = false;
+    uint distance_mm[DISTANCE_SENSOR_COUNT] = {};
+    bool line_states[LINE_SENSOR_COUNT] = {};
+    vmath::vect_t<double> orientation = { 0 };
+    double yaw_angle_deg = 0;
 
-    bool s_center = false;
-    bool s_left0 = false;
-    bool s_right0 = false;
-    bool s_left18 = false;
-    bool s_right18 = false;
-    bool s_left27 = false;
-    bool s_right27 = false;
-    bool s_left45 = false;
-    bool s_right45 = false;
-    bool s_left90 = false;
-    bool s_right90 = false;
+    Robot(){}
 
-    bool s_states[11];
+    bool isLineFront() const { return line_states[LINE_SENSOR_FRONT_LEFT] || line_states[LINE_SENSOR_FRONT_RIGHT]; }
+    bool isLineLeft() const { return line_states[LINE_SENSOR_FRONT_LEFT]; }
+    bool isLineRight() const { return line_states[LINE_SENSOR_FRONT_RIGHT]; }
+    bool isLineBack() const { return line_states[LINE_SENSOR_BACK]; }
+    bool isLineLeftLast() const { return lineLeftLast; }
 
-    double target_avg_angle = 0;
-    bool target_detected = false;
+    void init();
+    void update_input(void);
+    void update_output(void);
 
-    bool on_line = false;
-    bool turn_after_line = false;
-    bool turn_after_line_left = false;
-    bool turn_after_line_left_actual = false;
-    bool turning_after_line = false;
+    void move(double angle, double linearSpeed = 0, int period = -1, int align_timeout = -1);
+    //void moveArc(double endAngle, double curveRate, double linearSpeed, int period = -1);
 
-    bool angle_reached = false;
+    //void rotate(double angularSpeed, int period = -1);
+    void forward(double speed, int period = -1);
+    void backward(double speed, int period = -1);
+    void stop(void);
 
-    bool pid_control = false;
+    void flags_up() { flags_are_down = false; flgaModule.writeRegister(2,0); }
+    void flags_down() { flags_are_down = true; flgaModule.writeRegister(2,1); }
+    bool isFlagsDown() { return flags_are_down; }
 
-    int ctrl_steps = 0;
+    bool isAligned(void) { return aligned; }
+    bool isStopped(void) { return stop_input || stop_software; }
+    bool isMoveComplete(void) { return move_active; }
+    bool isStart(void) { return start_input; }
+    bool isStop(void) { return stop_input; }
 
-    bool coarse_move = false;
+    int getTactic() { return tactic; }
+    void setTactic(int i) { tactic = i; }
 
-    bool push = false;
+    bool isTurnAtStart(void) { return turn_at_start; }
+    void setTurnAtStart(bool value) { turn_at_start = value; }
 
-    bool target_in_front = false;
-
-    int dist_center = 0;
-
-    absolute_time_t line_timeout = 0;
-    absolute_time_t sensor_timeout = 0;
-    absolute_time_t push_timeout = 0;
-    absolute_time_t angle_timeout = 0;
-    vmath::vect_t<double> orientation;
-
-    RobotState(){};
+    bool isDetectedShort() { return detected_short; }
+    bool isDetectedLong() { return detected_long; }
+    bool isDetectedPush() { return detected_push; }
+    bool getAngleShort() { return detected_angle_short; }
+    bool getAngleLong() { return detected_angle_long; }
 };
 
-RobotState robot_state;
-
-float max_speed = 1.0;
-float min_speed = 0.06;
-
-float max_turn_speed = 0.2;
-double ramp_cof = 1.0/10000.0;
-
-Ramp rampA = Ramp(ramp_cof, min_speed, min_speed);
-Ramp rampB = Ramp(ramp_cof, min_speed, min_speed);
-PID yawPid = PID(0.45/180.0, 0.01, 1, 0.05, 0.0);//PID yawPid = PID(0.65/180.0, 0.008, 0.012, 0.07, 0.0);
-
-//float max_speed = 0.3;
-
-float speedA = 0;
-float speedB = 0;
-
-float forwardSpeed = 0;
-
-double target_yaw;
-absolute_time_t yaw_timestamp;
-
-bool hold_yaw = false;
-bool reversing = false;
-
-double base_speed = 0.2;
-double back_speed = 0.4;
-double push_speed = 0.4;
-double target_speed = 0.2;
-
-int tactic = 0;
-void tactic_default();
-void tactic_select(int n)
+void Robot::move_linear(double speed, int period)
 {
-    if (n == 0)
+    linear_speed_target = speed;
+    yaw_angle_target_deg = yaw_angle_deg;
+    track_yaw = true;
+    move_timeout = period;
+    move_active = true;
+    move_timestamp = get_absolute_time();
+    stop_software = false;
+}
+
+void Robot::move_align(double angle, int period)
+{
+    linear_speed_target = 0;
+    yaw_angle_target_deg = vmath::UnwrapAngleDegrees(yaw_angle_deg + angle);
+    track_yaw = true;
+    move_timeout = period;
+    move_active = true;
+    move_timestamp = get_absolute_time();
+    stop_software = false;
+}
+
+void Robot::forward(double speed, int period)
+{
+    move_2phase = false;
+    move_linear(speed, period);
+}
+
+void Robot::backward(double speed, int period)
+{
+    move_2phase = false;
+    move_linear(-speed, period);
+}
+
+void Robot::move(double angle, double linearSpeed, int period, int align_timeout)
+{
+    if (linearSpeed != 0)
     {
-        tactic_default();
-    }
-    if (n == 1)
-    {
-        base_speed = 0;
-        target_speed = 0;
-    }
-    else if (n == 2)
-    {
-        base_speed = base_speed * 2;
-        target_speed = target_speed * 2;
+        move_2phase = true;
+        move_phase2_speed = linearSpeed;
+        move_phase2_timeout = period;
     }
     else
     {
-        tactic_default();
+        move_2phase = false;
     }
-
+    move_align(angle, align_timeout);
 }
 
-void tactic_default()
+void Robot::stop(void)
 {
-    base_speed = 0.2;
-    target_speed = 0.2;
+    move_2phase = false;
+    stop_software = true;
+    move_active = false;
+    driver_out_a_current = 0;
+    driver_out_b_current = 0;
+    linear_speed_current = 0;
+    turn_pid.reset();
+    rampA.reset();
+    rampB.reset();
+    driver.stop(); //Imediate stop, to reduce delay
 }
 
-OneWire oneWireCntr(pioOneWireSerial2);
-DistanceSensor sensorCntr(oneWireCntr, 0);
-
-absolute_time_t c_read_tim = 0;
-
-void collect_sensor_data()
+void Robot::update_output()
 {
-    robot_state.lineRight = gpio_get(SENSOR_PIN_LINE_1);
-    robot_state.lineLeft = gpio_get(SENSOR_PIN_LINE_2);
-    robot_state.lineBack = gpio_get(SENSOR_PIN_LINE_3);
+    auto time = get_absolute_time();
+    double deltaT = ((double)absolute_time_diff_us(pid_timestamp, time)) / (1000 * 1000);
+    pid_timestamp = time;
 
-    if (absolute_time_diff_us(c_read_tim, get_absolute_time()) > 33000)
+    if (move_active)
     {
-        c_read_tim = get_absolute_time();
-        robot_state.dist_center = sensorCntr.getDistance_cm();
-        if (robot_state.dist_center < 0) robot_state.dist_center = 255;
-    }
-    
-    
-    robot_state.s_left90  = robot_state.s_states[0]  = gpio_get(SENSOR_PIN10);
-    robot_state.s_left45  = robot_state.s_states[1]  = gpio_get(SENSOR_PIN11);
-    robot_state.s_left27  = robot_state.s_states[2]  = gpio_get(SENSOR_PIN5);
-    robot_state.s_left18  = robot_state.s_states[3]  = gpio_get(SENSOR_PIN4);
-    robot_state.s_left0   = gpio_get(SENSOR_PIN9);
-    robot_state.s_center  = robot_state.s_states[5] = robot_state.dist_center < 255;//robot_state.s_states[5]  = gpio_get(SENSOR_PIN6);
-    robot_state.s_right0  = gpio_get(SENSOR_PIN3);
-    robot_state.s_right18 = robot_state.s_states[7]  = gpio_get(SENSOR_PIN8);
-    robot_state.s_right27 = robot_state.s_states[8]  = gpio_get(SENSOR_PIN7);
-    robot_state.s_right45 = robot_state.s_states[9]  = gpio_get(SENSOR_PIN1);
-    robot_state.s_right90 = robot_state.s_states[10] = gpio_get(SENSOR_PIN2);
-
-    robot_state.s_states[4] = false;
-    robot_state.s_states[6] = false;
-    bool target_detected =        robot_state.s_center || robot_state.s_left0 ||
-                                  robot_state.s_right0 || robot_state.s_left18 ||
-                                  robot_state.s_right18 || robot_state.s_left27 ||
-                                  robot_state.s_right27 || robot_state.s_left45 ||
-                                  robot_state.s_right45 || robot_state.s_left90 ||
-                                  robot_state.s_right90;
-
-                                  robot_state.target_in_front = robot_state.s_center || robot_state.s_left0 ||
-                                  robot_state.s_right0 || robot_state.s_left18 ||
-                                  robot_state.s_right18 || robot_state.s_left27 ||
-                                  robot_state.s_right27;
-
-    double angle_avg = 0;
-
-    if (!robot_state.on_line)
-    {
-        if (robot_state.lineLeft && !robot_state.lineRight)
+        if (move_timeout >= 0 && absolute_time_diff_us(move_timestamp, time) > (move_timeout * 1000))
         {
-            robot_state.turn_after_line_left = true;
+            stop();
         }
-    }
-
-    if (robot_state.lineLeft || robot_state.lineRight)
-    {
-        robot_state.on_line = true;
-        robot_state.turn_after_line = true;
-        robot_state.turn_after_line_left_actual = robot_state.turn_after_line_left;
-        robot_state.line_timeout = get_absolute_time();
-    }
-    else if (robot_state.on_line)
-    {
-        if (target_detected)
+        else if (move_2phase)
         {
-            robot_state.on_line = false;
-            robot_state.turn_after_line_left = false;
-        }
-        else if (absolute_time_diff_us(robot_state.line_timeout, get_absolute_time()) > (50 * 1000))
-        {
-            robot_state.on_line = false;
-            robot_state.turn_after_line_left = false;
-        }
-    }
-
-    if (target_detected)
-    {
-        robot_state.sensor_timeout = get_absolute_time();
-    }
-    /*
-    if (robot_state.s_center) angle_avg = 0;
-    else if (robot_state.s_left0 && robot_state.s_right0) angle_avg = 0;
-    else if (robot_state.s_left0) angle_avg = deg_to_radian(-12);
-    else if (robot_state.s_right0) angle_avg = deg_to_radian(12);
-    else if (robot_state.s_left18) angle_avg = deg_to_radian(-18);
-    else if (robot_state.s_right18) angle_avg = deg_to_radian(18);
-    else if (robot_state.s_left27) angle_avg = deg_to_radian(-27);
-    else if (robot_state.s_right27) angle_avg = deg_to_radian(27);
-    else if (robot_state.s_left45) angle_avg = deg_to_radian(-45);
-    else if (robot_state.s_right45) angle_avg = deg_to_radian(45);
-    else if (robot_state.s_left90) angle_avg = deg_to_radian(-90);
-    else if (robot_state.s_right90) angle_avg = deg_to_radian(90);
-    */
-    
-
-    double sum = 0;
-    int div = 0;
-
-    for (int i = 0; i < 11; i++)
-    {
-        if (robot_state.s_states[i])
-        {
-            sum += sensor_angles[i] + 90;
-            div += 1;
-        }
-    }
-
-    if (!target_detected)
-    {
-        if (robot_state.target_detected)
-        {
-            if (absolute_time_diff_us(robot_state.sensor_timeout, get_absolute_time()) > (33 * 1000))
+            if (aligned)
             {
-                robot_state.sensor_timeout = get_absolute_time();
-                robot_state.target_detected = false;
+                move_2phase = false;
+                move_linear(move_phase2_speed, move_phase2_timeout);
             }
         }
+    }
+
+    if (stop_input || stop_software)
+    {
+        driver_out_a_current = 0;
+        driver_out_b_current = 0;
+        linear_speed_current = 0;
+        turn_pid.reset();
+        rampA.reset();
+        rampB.reset();
+        driver.stop();
     }
     else
     {
-        robot_state.target_detected = true;
-        if (robot_state.s_center)
+        double dtA, dtB;
+
+        if (track_yaw)
         {
-            if (robot_state.s_left0 && robot_state.s_right0)
+            double p = turn_pid.compute_degrees(yaw_angle_target_deg, yaw_angle_deg, deltaT);
+            p = p + (p > 0 ? pid_feedforward : -pid_feedforward);
+            p = std::clamp(p, -max_turn_speed, max_turn_speed);
+            p = p * (1 + linear_speed_current * turn_linear_ratio);
+
+            if (p >= 0)
             {
-                robot_state.target_avg_angle = 0;
-            }
-            if (!robot_state.s_left0 && robot_state.s_right0)
-            {
-                robot_state.target_avg_angle = sensor_angles[6];
-            }
-            else if (robot_state.s_left0 && !robot_state.s_right0)
-            {
-                robot_state.target_avg_angle = sensor_angles[4];
+                dtA = p * (1 + turn_bias);
+                dtB = -p * (1 - turn_bias);
             }
             else
             {
-                robot_state.target_avg_angle = 0;
+                dtA = p * (1 - turn_bias);
+                dtB = -p * (1 + turn_bias);
             }
         }
         else
         {
-            if (div != 0)
-                robot_state.target_avg_angle = (sum / div) -90;
-                else robot_state.target_avg_angle = 0;
+            turn_pid.reset();
+            dtA = 0;
+            dtB = 0;
         }
-    }
 
-    if (robot_state.s_center)
-    {
-        if (robot_state.dist_center < 5)
+        double a_target, b_target;
+
+        if (std::abs(linear_speed_current) < (min_speed / 10))
         {
-            robot_state.push  = true;
+            a_target = dtA;//+P
+            b_target = dtB;//-P
         }
         else
         {
-            robot_state.push = false;
+            a_target = linear_speed_current + dtA;//+P
+            b_target = linear_speed_current + dtB;//-P
+
+            if (a_target > max_speed)
+            {
+                b_target -= a_target - max_speed;
+            }
+            else if (b_target > max_speed)
+            {
+                a_target -= b_target - max_speed;
+            }
+            else if (a_target < -max_speed)
+            {
+                b_target += -a_target - max_speed;
+            }
+            else if (b_target < -max_speed)
+            {
+                a_target += -b_target - max_speed;
+            }
         }
+        
+        a_target = std::clamp(a_target, -max_speed, max_speed);
+        b_target = std::clamp(b_target, -max_speed, max_speed);
+        driver_out_a_current = rampA.compute(driver_out_a_current, a_target);
+        driver_out_b_current = rampB.compute(driver_out_b_current, b_target);
+        driver_out_a_current = std::clamp(driver_out_a_current, -max_speed, max_speed);
+        driver_out_b_current = std::clamp(driver_out_b_current, -max_speed, max_speed);
+        driver.setSpeed(driver_out_a_current, driver_out_b_current);
+    }
+}
+
+void Robot::init()
+{
+    turn_pid.reset();
+    rampA.reset();
+    rampB.reset();
+    driver.stop();
+    pid_timestamp = get_absolute_time();
+}
+
+void Robot::update_input(void)
+{
+    static absolute_time_t distance_timestamp = 0;
+
+    if (absolute_time_diff_us(distance_timestamp, get_absolute_time()) > DISTANCE_READ_TIME)
+    {
+        distance_timestamp = get_absolute_time();
+        detected_long = false;
+        detected_short = false;
+        double sumLong = 0;
+        int divLong = 0;
+        double sumShort = 0;
+        int divShort = 0;
+        for (size_t i = 0; i < DISTANCE_SENSOR_COUNT; i++)
+        {
+            wire0.changePin(distance_sensor_pins[i]);
+            int d = distance_sensor.getDistance_mm();
+            if (d > 0) distance_mm[i] = d;
+            else distance_mm[i] = 0xFFFF;
+
+            if (d < SENSOR_RANGE_SHORT)
+            {
+                sumShort += sensor_angles[i] + 90;
+                divShort += 1;
+                detected_short = true;
+            }
+            else if (d < SENSOR_RANGE_LONG)
+            {
+                sumLong += sensor_angles[i] + 90;
+                divLong += 1;
+                detected_long = true;
+            }
+        }
+
+        if (detected_short && divShort != 0)
+        {
+            detected_angle_short = (sumShort / divShort) -90;
+        }
+        else
+        {
+            detected_angle_short = 0;
+        }
+
+        if (detected_long && divLong != 0)
+        {
+            detected_angle_long = (sumLong / divLong) -90;
+        }
+        else
+        {
+            detected_angle_long = 0;
+        }
+
+        detected_push = (distance_mm[SENSOR_CENTER_0] < SENSOR_RANGE_PUSH) || ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_PUSH) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_PUSH));
+
+        if ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_PUSH) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_PUSH))
+        {
+            detected_angle_short = 0;
+        }
+    }
+    
+    for (size_t i = 0; i < LINE_SENSOR_COUNT; i++)
+    {
+        line_states[i] = gpio_get(line_sensor_pins[i]);
+    }
+
+    if (isLineFront())
+    {
+        if (!isLineLeft())
+        {
+            lineLeftLast = false;
+        }
+        else if(!isLineRight())
+        {
+            lineLeftLast = true;
+        }
+    }
+    else
+    {
+        lineRatio = 0;
+    }
+
+    start_input = gpio_get(START_PIN);
+    stop_input = gpio_get(MOTOR_DRIVER_ENABLE);
+
+    async_imu_tryGetOrientation(orientation);
+    yaw_angle_deg = -orientation.Yaw(); //Make it so that left is negative, right is positive
+
+    double yaw_delta = std::abs(vmath::UnwrapAngleDegrees(yaw_angle_target_deg - yaw_angle_deg));
+
+    if (aligned)
+    {
+        if (yaw_delta > alignment_accuracy_deg)
+        {
+            aligned = false;
+        }
+        alignment_timestamp = get_absolute_time();
+    }
+    else
+    {
+        if (yaw_delta < alignment_accuracy_deg)
+        {
+            if (absolute_time_diff_us(alignment_timestamp, get_absolute_time()) > alignment_time)
+            {
+                alignment_timestamp = get_absolute_time();
+                aligned = true;
+            }
+        }
+        else
+        {
+            alignment_timestamp = get_absolute_time();
+        }
+    }
+}
+
+Robot robot;
+
+extern const SM::State initial_state_idle;
+extern const SM::State state_stop_robot;
+
+SM::StateMachine sm(&initial_state_idle);
+
+extern const SM::StateCondition line_detected; //reusable line avoidance routine
+
+constexpr double line_back_speed = 0.4;
+constexpr int line_back_period = 20; //ms
+constexpr double line_turn_angle = 90;
+constexpr int line_turn_period = 20; //ms
+extern const SM::State line_avoidance_start;
+extern const SM::State line_avoidance_step_2;
+extern const SM::State line_avoidance_step_3;
+
+
+extern const SM::State state_move_forward_step_1;
+extern const SM::State state_move_forward_step_2;
+constexpr double move_forward_s1_speed = 0.4;
+constexpr double move_forward_s1_period = 100;
+constexpr double move_forward_s2_speed = 0.2;
+constexpr double move_forward_s2_period = 1000; //long period, becouse should always reach line first
+
+extern const SM::State search_for_target_test;
+
+constexpr double push_speed = 0.6;
+
+extern const SM::State search_for_target;
+extern const SM::State state_track_target_long;
+extern const SM::State state_track_target_short;
+extern const SM::State state_push;
+
+constexpr double turn_180_angle = 180.0;
+constexpr int turn_180_timeout = 100;
+
+extern const SM::State turn_180_or_detect;
+
+
+const SM::StateCondition line_detected(
+    []{return robot.isLineFront();},
+    []{ 
+        robot.stop();
+        sm.jump(&line_avoidance_start); // we jump to the subroutine and we will return to the calling routines start
+    }
+);
+
+const SM::State line_avoidance_start(
+    {
+        []{ return !robot.isLineFront(); },
+        []{ sm.branch(&line_avoidance_step_2); } // we are off the line branch to next step
+    },
+    []{ 
+        robot.backward(line_back_speed);
+    }
+);
+
+const SM::State line_avoidance_step_2(
+    {
+        {
+            []{ return robot.isLineFront(); },
+            []{ sm.branch_return(); } // we are still on the line go back to begining
+        },
+        {
+            []{ return robot.isMoveComplete(); },
+            []{
+                robot.stop();
+                sm.next(&line_avoidance_step_3);
+            }
+        }
+    },
+    []{
+        robot.backward(line_back_speed, line_back_period);
+    }
+);
+
+const SM::State line_avoidance_step_3(
+    {
+        {
+            []{ return robot.isLineFront(); },
+            []{
+                robot.stop();
+                sm.branch_return(); // we are back on the line return to begining
+            }
+        },
+        {
+            []{ return robot.isMoveComplete(); },
+            []{
+                robot.stop();
+                sm.branch_return(2); // we are done return out of the routine
+            }
+        }
+    },
+    []{ 
+        robot.move(robot.isLineLeftLast() ? -line_turn_angle : line_turn_angle, 0, -1, line_turn_period);
+    }
+);
+
+const SM::State initial_state_idle(
+    {
+        {
+            []{ return robot.isStart(); },
+            []{
+                switch (robot.getTactic())
+                {
+                case 0:
+                default:
+                    if (robot.isTurnAtStart())
+                    {
+                        robot.setTurnAtStart(false);
+                        sm.branch(&turn_180_or_detect);
+                    }
+                    sm.branch(&search_for_target_test);
+                    break;
+                }
+                
+            }
+        }
+    },
+    []{
+        robot.stop();
+    }
+);
+
+const SM::State state_stop_robot(
+    {
+        []{ return false; },
+        []{}
+    },
+    []{
+        robot.stop();
+        STATUS_Led.blink(Color::Red(), Color::Black(), 500, 500);
+    }
+);
+
+const SM::State search_for_target_test(
+    {
+        line_detected,
+        {
+            []{ return true; },
+            []{ sm.branch(&state_move_forward_step_1); }
+        }
+    },
+    []{
+        robot.stop();
+    }
+);
+
 /*
-        if(absolute_time_diff_us(robot_state.push, get_absolute_time()) > (1000 * 1000))
-        {
-            robot_state.push  = true;
-        }*/
-    }
-    else
+    Move forward at some speed for some period, then reduce speed
+*/
+const SM::State state_move_forward_step_1(
     {
-        //robot_state.push_timeout = get_absolute_time();
-        robot_state.push = false;
-    }
-
-    
-
-    async_imu_tryGetData(robot_state.orientation);
-    double yawd = std::abs(vmath::UnwrapAngleDegrees(target_yaw - robot_state.orientation.Z));
-    bool reached = robot_state.coarse_move ? yawd < 6.0 : yawd < 2.0;
-    if (reached != robot_state.angle_reached)
-    {
-        if (absolute_time_diff_us(robot_state.angle_timeout, get_absolute_time()) > (33 * 1000))
+        line_detected,
         {
-            robot_state.angle_timeout = get_absolute_time();
-            robot_state.angle_reached = reached;
+            []{ return robot.isMoveComplete(); },
+            []{ sm.next(&state_move_forward_step_2); }
         }
+    },
+    []{
+        robot.forward(move_forward_s1_speed, move_forward_s1_period);
     }
-    else
+);
+
+const SM::State state_move_forward_step_2(
     {
-        robot_state.angle_timeout = get_absolute_time();
-    }
-}
-
-absolute_time_t tmstmp;
-void test_imu()
-{
-    
-
-    //while (true)
-    //{
-    if (absolute_time_diff_us(tmstmp, get_absolute_time()) > (100 * 1000))
-    {
-        tmstmp = get_absolute_time();
-        debug_printf("x %.4f, y %.4f, z %.4f\n", robot_state.orientation.X, robot_state.orientation.Y, robot_state.orientation.Z);
-    }
-    //}
-}
-
-void start_sensor_in_serial(uint pin)
-{
-    gpio_put(SENSORS_ENABLE, 0);
-    gpio_deinit(pin);
-    gpio_init(pin);
-    gpio_set_dir(pin, GPIO_OUT);
-    gpio_put(pin, 0);
-    sleep_ms(500);
-    gpio_put(SENSORS_ENABLE, 1);
-    sleep_ms(500);
-    gpio_deinit(pin);
-}
-
-void start_sensor_as_digital(uint pin)
-{
-    gpio_deinit(pin);
-    gpio_init(pin);
-    gpio_set_dir(pin, GPIO_IN);
-}
-
-void select_sensor(uint pin)
-{
-    pioOneWireSerial1.changePin(pin);
-}
-
-void do_line_calibration(void)
-{
-    int sensor_idx = 0;
-
-    STATUS_Led.set(Color(0x00,0xFF,0xFF));
-    STATUS_Led.update();
-    
-    while(true)
-    {
-        uint cmd = receiver.getCommandBlocking();
-        if (cmd == COMMAND_EXIT) return;
-        if (cmd == COMMAND_1)
+        line_detected,
         {
-            sensor_idx = 0;
-            break;
+            []{ return robot.isMoveComplete(); },
+            []{
+                robot.stop(); 
+                sm.branch_return();
+            }
         }
-        if (cmd == COMMAND_2)
+    },
+    []{
+        robot.forward(move_forward_s2_speed, move_forward_s2_period);
+    }
+);
+
+const SM::State search_for_target(
+    {
+        line_detected,
         {
-            sensor_idx = 1;
-            break;
-        }
-        if (cmd == COMMAND_3)
+            []{ return robot.isDetectedPush(); },
+            []{ sm.branch(&state_push); }
+        },
         {
-            sensor_idx = 2;
-            break;
+            []{ return robot.isDetectedShort(); },
+            []{ sm.branch(&state_track_target_short); }
+        },
+        {
+            []{ return robot.isDetectedLong(); },
+            []{ sm.branch(&state_track_target_long); }
+        },
+        {
+            []{ return true; },
+            []{ sm.branch(&state_move_forward_step_1); }
         }
+    },
+    []{
+        robot.stop();
     }
-    STATUS_Led.set(Color::Black());
-    STATUS_Led.update();
-    uint pin = sensor_pins[ls_index + sensor_idx];
-    start_sensor_in_serial(pin);
-    pioOneWireSerial1.changePin(pin);
-    OneWire oneWire(pioOneWireSerial1);
-    oneWire.init();
-    LineSensor sensor(oneWire, 0);
-    if (!sensor.begin())
+);
+
+const SM::State state_track_target_long(
     {
-        error_handler("LS failed to boot in serial", sensor_idx);
+        line_detected,
+        {
+            []{ return !robot.isDetectedLong() || robot.isDetectedShort() || robot.isDetectedPush(); },
+            []{
+                robot.stop();
+                sm.branch_return();
+            }
+        },
+        {
+            []{ return true; },
+            []{
+                robot.move(robot.getAngleLong());
+            }
+        }
+    },
+    []{
+        robot.stop();
     }
+);
 
-    STATUS_Led.blinkBlocking(Color(0x00,0xFF,0xFF), Color::Black(), 100, 100, 10);
-
-    int max = 0;
-    int min = 2000;
-    STATUS_Led.blink(Color::Blue(), Color::Green(), 100, 100);
-    absolute_time_t t0 = get_absolute_time();
-    while (absolute_time_diff_us(t0, get_absolute_time()) < (LINE_CALIBRATION_TIME * 1000))
+const SM::State state_track_target_short(
     {
-        int val = sensor.getTotalAverage();
-        if (val < 0) continue;
-
-        if (val > max) max = val;
-        if (val < min) min = val;
-        sleep_ms(5);
-        STATUS_Led.update();
+        line_detected,
+        {
+            []{ return robot.isDetectedLong() || !robot.isDetectedShort() || robot.isDetectedPush(); },
+            []{
+                robot.stop();
+                sm.branch_return();
+            }
+        },
+        {
+            []{ return true; },
+            []{
+                robot.move(robot.getAngleShort());
+            }
+        }
+    },
+    []{
+        robot.stop();
     }
+);
 
-    int dif = ((max - min) / 2) * 0.8 + min;
-    sleep_ms(5);
-    sensor.setDetectionLowerThreshold(dif);
-    sleep_ms(5);
-    sensor.setDetectionUpperThreshold(dif);
-    sleep_ms(5);
-    sensor.saveConfiguration();
-    sleep_ms(50);
-    sensor.restartDevice();
-    sleep_ms(50);
-    STATUS_Led.set(Color::Green());
-    STATUS_Led.update();
-
-    debug_printf("Line sensor %d, max %d, min %d, dif %d\n", sensor_idx, max, min, dif);
-
-    sleep_ms(500);
-    STATUS_Led.set(Color::Black());
-    STATUS_Led.update();
-
-    start_sensor_as_digital(pin);
-}
-
-void do_imu_calibration(void)
-{
-    STATUS_Led.set(Color(0x00,0xFF,0xFF));
-    STATUS_Led.update();
-    debug_printf("imu calib start\n");
-
-    if (!async_imu_stop())
+const SM::State state_push(
     {
-        error_handler("Async IMU stop failed", 0);
+        line_detected,
+        {
+            []{ return !robot.isDetectedPush(); },
+            []{
+                robot.stop();
+                sm.branch_return();
+            }
+        }
+    },
+    []{
+        robot.forward(push_speed);
     }
+);
 
-    printf("Keep the robot still for 5 seconds...\n");
-
-    if (!async_imu_calibrate(config0.accelBias, config0.gyroBias))
+const SM::State turn_180_or_detect(
     {
-        error_handler("Async IMU calib failed", 0);
+        line_detected,
+        {
+            []{ return robot.isMoveComplete() || robot.isDetectedLong() || robot.isDetectedShort() || robot.isDetectedPush(); },
+            []{
+                robot.stop();
+                sm.branch_return();
+            }
+        }
+    },
+    []{
+        robot.move(turn_180_angle, 0, -1, turn_180_timeout);
     }
-
-    async_imu_setBias(config0.accelBias, config0.gyroBias);
-
-    debug_printf("Accel bias: X %.4f, Y %.4f, Z %.4f\n", config0.accelBias.X, config0.accelBias.Y, config0.accelBias.Z);
-    debug_printf("Gyro bias: X %.4f, Y %.4f, Z %.4f\n", config0.gyroBias.X, config0.gyroBias.Y, config0.gyroBias.Z);
-    
-    if (!async_imu_start())
-    {
-        error_handler("Async IMU start failed", 0);
-    }
-
-    debug_printf("imu calib end\n");
-    SaveConfig();
-    STATUS_Led.set(Color::Black());
-    STATUS_Led.update();
-}
-
-absolute_time_t rc_timestamp = 0;
-
+);
 
 void handle_command(uint command)
 {
-    printf("%d\n",command);
+    debug_printf("%d\n",command);
     STATUS_Led.blink(Color::Blue(), Color::Black(), 10, 100, 1);
     switch (command)
     {
@@ -608,19 +859,22 @@ void handle_command(uint command)
         do_imu_calibration();
         break;
     case 1:
-        tactic = 1;
+        robot.setTactic(1);
         break;
-        case 2:
-        tactic = 2;
+    case 2:
+        robot.setTactic(2);
         break;
-        case 3:
-        tactic = 3;
+    case 3:
+        robot.setTactic(3);
         break;
-        case 4:
-        tactic = 4;
+    case 4:
+        robot.setTactic(4);
         break;
-        case 5:
-        tactic = 5;
+    case 5:
+        robot.setTactic(5);
+        break;
+    case 10:
+        robot.setTurnAtStart(true);
         break;
     case COMMAND_EXIT:
         break;
@@ -629,304 +883,21 @@ void handle_command(uint command)
     }
 }
 
-double target_yaw_offset_last = 0;
-
-void set_robot(double speed, double yaw_offset)
+void handle_remote(void)
 {
-    target_yaw = vmath::UnwrapAngleDegrees(robot_state.orientation.Z + yaw_offset);
-    forwardSpeed = speed;
-
-    if (std::abs(target_yaw - target_yaw_offset_last) > 1.0)
-    {
-        robot_state.angle_reached = false;
-        robot_state.angle_timeout = get_absolute_time();
-    }
-
-    target_yaw_offset_last = target_yaw;
-}
-
-void move(double fspeed, double yaw_offset, bool coarse = false)
-{
-    robot_state.coarse_move = coarse;
-    target_yaw = vmath::UnwrapAngleDegrees(robot_state.orientation.Z + yaw_offset);
-    forwardSpeed = fspeed;
-
-    if (std::abs(target_yaw - target_yaw_offset_last) > 1.0)
-    {
-        robot_state.angle_reached = false;
-        robot_state.angle_timeout = get_absolute_time();
-    }
-
-    target_yaw_offset_last = target_yaw;
-}
-
-bool isMoveComplete()
-{
-    double yawd = std::abs(vmath::UnwrapAngleDegrees(robot_state.orientation.Z - target_yaw));
-    bool reached = yawd < 5.0;
-    if (reached)
-    {
-        if (absolute_time_diff_us(robot_state.angle_timeout, get_absolute_time()) > (20 * 1000))
-        {
-            robot_state.angle_timeout = get_absolute_time();
-            robot_state.angle_reached = true;
-        }
-    }
-    else
-    {
-        robot_state.angle_timeout = get_absolute_time();
-        robot_state.angle_reached = false;
-    }
-    return robot_state.angle_reached;
-}
-
-void handle_idle(void)
-{
+    static absolute_time_t rc_timestamp = 0;
     uint command = 0;
-
-    if (gpio_get(START_PIN) && gpio_get(MOTOR_DRIVER_ENABLE))
-    {
-        pioOneWireSerial0.changePin(FLAG_PIN);
-        flgaModule.begin();
-        flgaModule.writeRegister(2,1);
-
-        tactic_select(tactic);
-        yaw_timestamp = get_absolute_time();
-        target_yaw = robot_state.orientation.Z;
-        rampA.reset();
-        rampB.reset();
-        //flag_down();
-        
-        sumo_state = SUMO_FIGHT;
-        return;
-    }
 
     if (receiver.getCommand(&command))
     {
         if (absolute_time_diff_us(rc_timestamp, get_absolute_time()) > (500 * 1000))
         {
-            rc_timestamp = get_absolute_time();
             handle_command(command);
+            rc_timestamp = get_absolute_time();
         }
-    }
-
-    collect_sensor_data();
-
-    //test_imu();
-
-    driver.stop();
-}
-
-absolute_time_t printfTs = 0;
-
-void handle_fight(void)
-{
-    if (!gpio_get(START_PIN) || !gpio_get(MOTOR_DRIVER_ENABLE))
-    {
-        sumo_state = SUMO_STOP;
-        STATUS_Led.blink(Color::Red(), Color::Black(), 500, 500);
-        return;
-    }
-
-    collect_sensor_data();
-    absolute_time_t time = get_absolute_time();
-
-    reversing = false;
-        
-
-    //robot_state.target_detected = false;
-    if (robot_state.on_line)
-    {
-        robot_state.turning_after_line = false;
-        robot_state.ctrl_steps = 1;
-        reversing = true;
-        move(-back_speed, 0);
-    }
-    else if (robot_state.target_detected)
-    {
-        robot_state.turn_after_line = false;
-        robot_state.turning_after_line = false;
-        
-        if (robot_state.push)
-        {
-            move(push_speed, robot_state.target_avg_angle);
-        }
-        else if (robot_state.target_in_front)
-        {
-            move(target_speed, robot_state.target_avg_angle);
-        }
-        else
-        {
-            move(0, robot_state.target_avg_angle);
-        }
-    }
-    else
-    {
-        if (robot_state.turning_after_line)
-        {
-        }
-        else
-        {
-            if (robot_state.turn_after_line)
-            {
-                if (robot_state.ctrl_steps == 0)
-                {
-                    robot_state.turn_after_line = false;
-                }
-                else
-                {
-                    if (robot_state.turn_after_line_left_actual)
-                    {
-                        move(0, -90, true);
-                    }
-                    else
-                    {
-                        move(0, 90, true);
-                    }
-                    robot_state.turning_after_line = true;
-                }
-            }
-            else
-            {
-                move(base_speed, 0);
-            }
-        }
-    }
-
-    if (robot_state.turning_after_line)
-    {
-        if (robot_state.angle_reached)
-        {
-            robot_state.ctrl_steps--;
-            robot_state.turning_after_line = false;
-            //move(0, 0);
-        }
-    }
-
-    //printf("%d, %f, %f\n", robot_state.target_detected, robot_state.target_avg_angle, p);
-    if (absolute_time_diff_us(printfTs, get_absolute_time()) > (200 * 1000))
-        {
-            printfTs = get_absolute_time();
-            //debug_printf("line %d, detect %d, turn afrer line %d, turning after line %d, angle reached %d, turn after line left actula %d\n", robot_state.on_line, robot_state.target_detected, robot_state.turn_after_line, robot_state.turning_after_line, robot_state.angle_reached, robot_state.turn_after_line_left_actual);
-            //debug_printf("yaw %.1f, tg %.1f, tgl %.1f, p %.3f, df %.3f\n", robot_state.orientation.Z, target_yaw, target_yaw_offset_last, 0, 0);
-            //debug_printf("Angle = %f\n90:%d,45:%d,27:%d,18:%d,L0:%d,0:%d,RO:%d,18:%d,27:%d,45:%d,90:%d\n", robot_state.target_avg_angle, robot_state.s_left90, robot_state.s_left45, robot_state.s_left27, robot_state.s_left18, robot_state.s_left0, robot_state.s_center, robot_state.s_right0, robot_state.s_right18, robot_state.s_right27, robot_state.s_right45, robot_state.s_right90);
-            //printf("tg %.2f, d %d, A %.2f, T %.2f, p %0.2f, SA %.2f, SB %.2f\n", robot_state.target_avg_angle, robot_state.dist_center, robot_state.orientation.Z,  target_yaw, p, speedA, speedB);
-        }
-
-    if (robot_state.angle_reached)
-    {
-        STATUS_Led.set(Color::Black());
-        if (robot_state.pid_control)
-        {
-            yawPid.reset();
-            //rampA.reset();
-            //rampB.reset();
-            //speedA = 0;
-            //speedB = 0;
-            robot_state.pid_control = false;
-        }
-        speedA = rampA.compute(speedA, forwardSpeed);
-        speedB = rampB.compute(speedB, forwardSpeed);
-    }
-    else
-    {
-        STATUS_Led.set(Color::Red());
-        if (!robot_state.pid_control)
-        {
-            yawPid.reset();
-            //rampA.reset();
-            //rampB.reset();
-            //speedA = 0;
-            //speedB = 0;
-            robot_state.pid_control = true;
-        }
-        
-        double deltaT = ((double)absolute_time_diff_us(yaw_timestamp, time)) / (1000 * 1000);
-        double p = yawPid.compute_degrees(target_yaw, robot_state.orientation.Z, deltaT);
-        p = p + (p > 0 ? min_speed : -min_speed);
-        double df = (1 - std::abs(forwardSpeed)) * p;
-
-        
-
-        if (isnan(p))
-        {
-            //printf("%f", deltaT);
-            yawPid.reset();
-        }
-
-        if (std::abs(forwardSpeed) > 0.01)
-        {
-            if (df > 0)
-            {
-                speedA = rampA.compute(speedA, forwardSpeed);
-                speedB = rampB.compute(speedB, forwardSpeed + df);
-            }
-            else
-            {
-                speedA = rampA.compute(speedA, forwardSpeed - df);
-                speedB = rampB.compute(speedB, forwardSpeed);
-            }
-        }
-        else
-        {
-            speedA = rampA.compute(speedA, forwardSpeed - df);
-            speedB = rampB.compute(speedB, forwardSpeed + df);
-        }
-
-        //speedA = forwardSpeed + df;
-        //speedB = forwardSpeed - df;
-
-        //if (robot_state.push)
-        //{
-        //    tactic_default();
-        //    speedA = 0.5;
-        //    speedB = 0.5;
-        //}
-        //else
-        //{
-            if (speedA > max_speed) speedA  = max_speed;
-            else if (speedA < -max_speed) speedA  = -max_speed;
-
-            //if (speedA < min_speed && speedA > -min_speed) speedA = min_speed;
-
-            if (speedB > max_speed) speedB  = max_speed;
-            else if (speedB < -max_speed) speedB  = -max_speed;
-
-            //if (speedB < min_speed && speedB > -min_speed) speedB = min_speed;
-    }
-    
-    
-    yaw_timestamp = time;
-
-    driver.setSpeed(speedA, speedB);
-}
-
-void handle_stop(void)
-{
-    flgaModule.writeRegister(2,0);
-    driver.stop();
-}
-
-void state_machine(void)
-{
-    switch (sumo_state)
-    {
-    case SUMO_IDLE:
-        handle_idle();
-        break;
-    case SUMO_FIGHT:
-        handle_fight();
-        break;
-    case SUMO_STOP:
-        handle_stop();
-        break;
-    default:
-        break;
     }
 }
 
-void sensors_configure(void);
-void sensor_configure(uint pin);
 void hardware_init(void);
 
 
@@ -935,16 +906,10 @@ int main()
     io_init();
     NVM.init(FLASH_SECTOR_SIZE, &config0, sizeof(config0));
     LoadConfig();
-
     hardware_init();
+    robot.init();
 
-    if (!async_imu_start())
-    {
-        error_handler("Async IMU start failed", 0);
-    }
-    
-    pioOneWireSerial1.init();
-    pioOneWireSerial2.init();
+    //configure_sensors();
 
     //gpio_init(6);
     //gpio_set_dir(6, GPIO_IN);
@@ -954,60 +919,20 @@ int main()
 
     //sensor_configure(SENSOR_PIN6);
     //pioOneWireSerial1.setBaudrate(115200);
-    oneWireCntr.init();
-    pioOneWireSerial2.changePin(SENSOR_PIN6);
-
-    
-    
-
-  //  while(true)
-    //{
-
-    //}
-
-    //sensors_configure();
-
-    start_sensor_as_digital(SENSOR_PIN1);
-    start_sensor_as_digital(SENSOR_PIN2);
-    start_sensor_as_digital(SENSOR_PIN3);
-    start_sensor_as_digital(SENSOR_PIN4);
-    start_sensor_as_digital(SENSOR_PIN5);
-    //start_sensor_as_digital(SENSOR_PIN6);
-    start_sensor_as_digital(SENSOR_PIN7);
-    start_sensor_as_digital(SENSOR_PIN8);
-    start_sensor_as_digital(SENSOR_PIN9);
-    start_sensor_as_digital(SENSOR_PIN10);
-    start_sensor_as_digital(SENSOR_PIN11);
-    start_sensor_as_digital(SENSOR_PIN_LINE_1);
-    start_sensor_as_digital(SENSOR_PIN_LINE_2);
-    start_sensor_as_digital(SENSOR_PIN_LINE_3);
-    gpio_put(SENSORS_ENABLE, 1);
-    STATUS_Led.init();
-    STATUS_Led.set(Color::Black());
-    STATUS_Led.update();
-
-    /*while (true)
-    {
-        int d = sensorCntr.getDistance_cm();
-        debug_printf("Distance: %d cm\n", d);
-        sleep_ms(200);
-    }*/
-
-    pioOneWireSerial0.init();
-
-    
-    
-    oneWire0.init();
-
-    driver.init();
-    
-    if (!receiver.begin()) error_handler("Receiver init", 0);
-    if (!receiver.restartDevice()) error_handler("Receiver init", 0);
-    if (!receiver.begin()) error_handler("Receiver init", 0);
 
     while (true)
     {
-        state_machine();
+        robot.update_input();
+        if (!robot.isStart())
+        {
+            handle_remote();
+        }
+        if (robot.isStop())
+        {
+            sm.branch(&state_stop_robot);
+        }
+        sm.loop();
+        robot.update_output();
         STATUS_Led.update();
     }
 }
@@ -1022,10 +947,18 @@ void io_init(void)
     stdio_init_all();
 #endif
 
-    //while (!stdio_usb_connected());
-    //sleep_ms(1000);
-    // gpio_pull_up(I2C_SDA);
-    // gpio_pull_up(I2C_SCL);
+    gpio_init(DEBUG_VBUS_PIN);
+    gpio_set_dir(DEBUG_VBUS_PIN, GPIO_IN);
+    if (gpio_get(DEBUG_VBUS_PIN))
+    {
+        sleep_ms(100);
+        while (!stdio_usb_connected())
+        {
+            //wait for usb
+            tight_loop_contents();
+        }
+        sleep_ms(1000);
+    }
 
     gpio_init(START_PIN);
     gpio_set_dir(START_PIN, GPIO_IN);
@@ -1033,6 +966,7 @@ void io_init(void)
     gpio_set_dir(MOTOR_DRIVER_ENABLE, GPIO_IN);
     gpio_init(SENSORS_ENABLE);
     gpio_set_dir(SENSORS_ENABLE, GPIO_OUT);
+    gpio_put(SENSORS_ENABLE, 0);
 
     i2c_init(I2C_PORT, I2C_SPEED);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
@@ -1044,6 +978,9 @@ void io_init(void)
 
 void hardware_init(void)
 {
+    STATUS_Led.init();
+    STATUS_Led.setBlocking(Color::Black());
+
     if (!imu.begin(LSM6DSR::ACCEL_RANGE_16G, LSM6DSR::GYRO_RANGE_4000DPS, LSM6DSR::DATA_RATE_3P33KHZ, LSM6DSR::DATA_RATE_833HZ))
     {
         error_handler("IMU init failed", 0);
@@ -1055,7 +992,56 @@ void hardware_init(void)
     }
 
     double beta = sqrt(3.0/4.0) * LSM6DSR_GYRO_NOISE_DPS_PER_ROOTHZ * (M_PI / 180.0) * sqrt(833); // Compute beta
-    async_imu_init((IMU*)&imu, config0.accelBias, config0.gyroBias, beta);
+    if (!async_imu_init((IMU*)&imu, config0.accelBias, config0.gyroBias, beta))
+    {
+        error_handler("Async IMU int failed", 0);
+    }
+
+    if (!async_imu_start())
+    {
+        error_handler("Async IMU start failed", 0);
+    }
+
+    pioOneWire0.init();
+    pioOneWire1.init();
+    wire0.init();
+    wire1.init();
+    driver.init();
+
+    wire1.changePin(FLAG_PIN);
+    if (!flgaModule.begin())
+    {
+        error_handler("Failed to init flag module", 0);
+    }
+    if (!flgaModule.restartDevice())
+    {
+        error_handler("Failed to restart flag module", 0);
+    }
+    if (!flgaModule.begin())
+    {
+        error_handler("Failed to init flag module", 1);
+    }
+
+    wire1.changePin(RECEIVER_PIN);
+    if (!receiver.begin())
+    {
+        error_handler("Failed to init receiver", 0);
+    }
+    if (!receiver.restartDevice())
+    {
+        error_handler("Failed to restart receiver", 0);
+    }
+    if (!receiver.begin())
+    {
+        error_handler("Failed to init receiver", 1);
+    }
+    
+    //configure_sensors();
+
+    if (!init_sensors())
+    {
+        error_handler("Failed to init sensors", 0);
+    }
 }
 
 void debug_printf(const char *format, ...)
@@ -1081,8 +1067,10 @@ void error_handler(const char* str, int code)
 
 void SaveConfig(void)
 {
+    async_imu_stop(); //stop the other core
     config0.LockCode = NVM_CONFG_LOCK_CODE;
     NVM.program();
+    async_imu_start(); //start the other core
 }
 
 void LoadConfig(void)
@@ -1092,231 +1080,6 @@ void LoadConfig(void)
     if (config0.LockCode != NVM_CONFG_LOCK_CODE) {
         config0 = {};
     }
-}
-
-
-void sensors_configure(void)
-{
-    gpio_put(SENSORS_ENABLE, 0);
-    sleep_ms(500);
-
-    for(int i = 0; i < sensor_count; i++)
-    {
-        
-        gpio_deinit(sensor_pins[i]);
-        gpio_init(sensor_pins[i]);
-        gpio_set_dir(sensor_pins[i], GPIO_OUT);
-        gpio_put(sensor_pins[i], 0);
-    }
-
-    sleep_ms(500);
-    gpio_put(SENSORS_ENABLE, 1);
-    sleep_ms(500);
-
-    for (int i = 0; i < sensor_count; i++)
-    {
-        gpio_deinit(sensor_pins[i]);
-    }
-/*
-    for (int i = 0; i < sensor_count; i++)
-    {
-        sleep_ms(100);
-        select_sensor(sensor_pins[i]);
-        sleep_ms(100);
-        sensor.begin();
-        sleep_ms(5);
-        //sensor.setRangeMin_mm(1);
-        //sleep_ms(5);
-       // sensor.setRangeOffset(0);
-        //sleep_ms(5);
-        ///sensor.setRangeLinearCorrection(0x8000);
-        sensor.setRangeMax_mm(800);
-        sleep_ms(50);
-        sensor.saveConfiguration();
-    }
-*/
-
-    OneWire oneWire(pioOneWireSerial1);
-    oneWire.init();
-    DistanceSensor sensor(oneWire, 0);
-
-    for (int i = 0; i < sensor_count - 3; i++)
-    {
-        if (sensor_pins[i] == SENSOR_PIN6) continue;
-        sleep_ms(500);
-        pioOneWireSerial1.changePin(sensor_pins[i]);
-        sleep_ms(500);
-        sensor.begin();
-        sleep_ms(50);
-        sensor.setRangeMin_mm(1);
-        sleep_ms(50);
-        sensor.setRangeMax_mm(400);
-        sleep_ms(50);
-        sensor.setRangeOffset(0);
-        sleep_ms(50);
-        sensor.setRangeLinearCorrection(0x8000);
-        sleep_ms(50);
-        sensor.setIOMode(OneWireDevice::IOMODE_DO);
-        sleep_ms(50);
-        sensor.setRangeTiming_ms(33);
-        sleep_ms(50);
-        sensor.saveConfiguration();
-        sleep_ms(50);
-        sensor.begin();
-        sleep_ms(50);
-        int min = sensor.getRangeMin_mm();
-        sleep_ms(50);
-        int max = sensor.getRangeMax_mm();
-        sleep_ms(50);
-        int offset = sensor.getRangeOffset();
-        sleep_ms(50);
-        int cor = sensor.getRangeLinearCorrection();
-        sleep_ms(50);
-        printf("sensor %d, range min %d mm\n", i, min);
-        printf("sensor %d, range max %d mm\n", i, max);
-        printf("sensor %d, range offset %d mm\n", i, offset);
-        printf("sensor %d, range cor %d mm\n", i, cor);
-
-        //sensor.setSerialBaudRate(OneWireDevice::SERIAL_BAUD_115200);
-        /*
-        if (!sensor.lock())
-        {
-            debug_printf("Failed loc\n");
-        }
-        else
-        {
-            debug_printf("lock success\n");
-        }
-        */
-        /*
-        int min = sensor.getRangeMin_mm();
-        sleep_ms(5);
-        int max = sensor.getRangeMax_mm();
-        sleep_ms(5);
-        int offset = sensor.getRangeOffset();
-        sleep_ms(5);
-        int lincor = sensor.getRangeLinearCorrection();
-        sleep_ms(5);
-        int timing = sensor.getRangeTiming_ms();
-        sleep_ms(5);
-        int sigma = sensor.getRangeSigmaLimit_mm();
-        sleep_ms(5);
-        int signal = sensor.getRangeSignalLimit_MCPS();
-        sleep_ms(5);
-        int xtalk = sensor.getRangeXTALK();
-        sleep_ms(5);
-        */
-        //printf("Sensor %d:\nmin %d, max %d\noffset %d\nlincor %d\ntiming %d\nsigma %d\nsignal %d\nxtalk %d\n\n", i+1, min, max, offset, lincor, timing, sigma, signal, xtalk);
-    }
-    sleep_ms(500);
-    gpio_put(SENSORS_ENABLE, 0);
-    sleep_ms(500);
-}
-
-void sensor_configure(uint pin)
-{
-    gpio_put(SENSORS_ENABLE, 0);
-    sleep_ms(500);
-
-    gpio_deinit(pin);
-    gpio_init(pin);
-    gpio_set_dir(pin, GPIO_OUT);
-    gpio_put(pin, 0);
-
-    sleep_ms(500);
-    gpio_put(SENSORS_ENABLE, 1);
-    sleep_ms(500);
-
-    gpio_deinit(pin);
-/*
-    for (int i = 0; i < sensor_count; i++)
-    {
-        sleep_ms(100);
-        select_sensor(sensor_pins[i]);
-        sleep_ms(100);
-        sensor.begin();
-        sleep_ms(5);
-        //sensor.setRangeMin_mm(1);
-        //sleep_ms(5);
-       // sensor.setRangeOffset(0);
-        //sleep_ms(5);
-        ///sensor.setRangeLinearCorrection(0x8000);
-        sensor.setRangeMax_mm(800);
-        sleep_ms(50);
-        sensor.saveConfiguration();
-    }
-*/
-
-    OneWire oneWire(pioOneWireSerial1);
-    oneWire.init();
-    DistanceSensor sensor(oneWire, 0);
-
-    sleep_ms(500);
-    pioOneWireSerial1.changePin(pin);
-    sleep_ms(500);
-    sensor.begin();
-    sleep_ms(50);
-    sensor.setRangeMin_mm(1);
-    sleep_ms(50);
-    sensor.setRangeMax_mm(400);
-    sleep_ms(50);
-    sensor.setRangeOffset(0);
-    sleep_ms(50);
-    sensor.setRangeLinearCorrection(0x8000);
-    sleep_ms(50);
-    sensor.setIOMode(OneWireDevice::IOMODE_SERIAL);
-    sleep_ms(50);
-    sensor.setRangeTiming_ms(33);
-    sleep_ms(50);
-    sensor.saveConfiguration();
-    sleep_ms(50);
-    sensor.begin();
-    sleep_ms(50);
-    int min = sensor.getRangeMin_mm();
-    sleep_ms(50);
-    int max = sensor.getRangeMax_mm();
-    sleep_ms(50);
-    int offset = sensor.getRangeOffset();
-    sleep_ms(50);
-    int cor = sensor.getRangeLinearCorrection();
-    sleep_ms(50);
-    auto io = sensor.getIOMode();
-    sleep_ms(50);
-    printf("Range min %d mm\n", min);
-    printf("Range max %d mm\n", max);
-    printf("Range offset %d mm\n", offset);
-    printf("Range cor %d mm\n", cor);
-    printf("IOMode %d\n", (int)io);
-
-    if (!sensor.lock())
-    {
-        debug_printf("Failed loc\n");
-    }
-    else
-    {
-        debug_printf("lock success\n");
-    }
-
-    if (!sensor.setSerialBaudRate(OneWireDevice::SERIAL_BAUD_115200))
-    {
-        debug_printf("Failed set baud\n");
-    }
-    else
-    {
-        debug_printf("Set baud success\n");
-    }
-
-    /*while (true)
-    {
-        int d = sensor.getDistance_cm();
-        printf("Distance: %d cm\n", d);
-        sleep_ms(200);
-    }*/
-    
-
-    sleep_ms(500);
-    gpio_put(SENSORS_ENABLE, 0);
-    sleep_ms(500);
 }
 
 void i2c_clear_bus(uint scl, uint sda, int delay)
@@ -1351,4 +1114,395 @@ void i2c_clear_bus(uint scl, uint sda, int delay)
     gpio_set_dir(sda, false);
     gpio_set_function(scl, GPIO_FUNC_I2C);
     gpio_set_function(sda, GPIO_FUNC_I2C); 
+}
+
+void do_line_calibration(void)
+{
+    int sensor_idx = 0;
+    
+    debug_printf("Line calibration, waiting for index\n");
+
+    STATUS_Led.setBlocking(Color(0x00,0xFF,0xFF));
+    
+    while(true)
+    {
+        uint cmd = receiver.getCommandBlocking();
+        if (cmd == COMMAND_EXIT)
+        {
+            debug_printf("Line calibration, exit\n");
+            STATUS_Led.setBlocking(Color::Black());
+            return;
+        }
+        else if (cmd == COMMAND_1)
+        {
+            sensor_idx = 0;
+            break;
+        }
+        else if (cmd == COMMAND_2)
+        {
+            sensor_idx = 1;
+            break;
+        }
+        else if (cmd == COMMAND_3)
+        {
+            sensor_idx = 2;
+            break;
+        }
+    }
+
+    debug_printf("Line sensor %d calibration start\n", sensor_idx);
+
+    STATUS_Led.setBlocking(Color::Blue());
+    calibrate_line_sensor(sensor_idx, LINE_CALIBRATION_TIME);
+    STATUS_Led.setBlocking(Color::Black());
+
+    debug_printf("Line sensor %d calibration completed\n", sensor_idx);
+}
+
+void do_imu_calibration(void)
+{
+    STATUS_Led.setBlocking(Color(0x00,0xFF,0xFF));
+
+    debug_printf("IMU calibration start.\n Keep the robot still for 5 seconds...\n");
+
+    if (!async_imu_calibrate())
+    {
+        error_handler("IMU calibration failed!", 0);
+    }
+
+    if (!async_imu_getBias(config0.accelBias, config0.gyroBias))
+    {
+        error_handler("Failed to get IMU Bias!", 0);
+    }
+
+    debug_printf("Accel bias: X %.4f, Y %.4f, Z %.4f\n", config0.accelBias.X, config0.accelBias.Y, config0.accelBias.Z);
+    debug_printf("Gyro bias: X %.4f, Y %.4f, Z %.4f\n", config0.gyroBias.X, config0.gyroBias.Y, config0.gyroBias.Z);
+
+    SaveConfig();
+
+    debug_printf("IMU calibration completed.\n");
+
+    STATUS_Led.setBlocking(Color::Black());
+}
+
+void calibrate_line_sensor(size_t i, uint duration_ms)
+{
+    uint initialBaud = wire0.getBaudrate();
+    wire0.setBaudrate(9600);
+    uint pin = line_sensor_pins[i];
+    sensor_restart_serial(pin);
+    wire0.changePin(pin, true);
+    LineSensor sensor(wire0, 0);
+
+    if (!sensor.begin())
+    {
+        error_handler("Line sensor failed to boot!", i);
+    }
+
+    int max = 0;
+    int min = 2000;
+    absolute_time_t timeStart = get_absolute_time();
+    while (absolute_time_diff_us(timeStart, get_absolute_time()) < (duration_ms * 1000))
+    {
+        int val = sensor.getTotalAverage();
+        if (val < 0) continue;
+
+        if (val > max) max = val;
+        if (val < min) min = val;
+        sleep_ms(5);
+    }
+
+    int dif = ((max - min) / 2) * 0.8 + min;
+    if (!sensor.setDetectionLowerThreshold(dif))
+    {
+        error_handler("Sensor failed to set lower threshold!\n", i);
+    }
+    sleep_ms(5);
+    if (!sensor.setDetectionUpperThreshold(dif))
+    {
+        error_handler("Sensor failed to set upper threshold!\n", i);
+    }
+    sleep_ms(5);
+    if (!sensor.saveConfiguration())
+    {
+        error_handler("Sensor failed to save config!\n", i);
+    }
+    debug_printf("Line sensor %d, max %d, min %d, dif %d\n", i, max, min, dif);
+    sleep_ms(50);
+    sensor_restart_digital(pin);
+    wire0.setBaudrate(initialBaud);
+}
+
+bool distance_sensor_configure(size_t i, const DistanceSensorConfig_s& config)
+{
+    uint initialBaud = wire0.getBaudrate();
+    wire0.setBaudrate(9600);
+    uint pin = distance_sensor_pins[i];
+    sensor_restart_serial(pin);
+    wire0.changePin(pin, true);
+    DistanceSensor sensor(wire0, 0);
+
+    bool ok = false;
+
+    do {
+        if (!sensor.begin())
+        {
+            debug_printf("Distance sensor failed to boot!\n", i);
+            break;
+        }
+
+        if (sensor.setRangeMin_mm(config.min))
+        {
+            int check = sensor.getRangeMin_mm();
+
+            if (check == config.min)
+            {
+                debug_printf("Sensor: %d, set range min to %dmm\n", i, config.min);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set range min to %dmm, response %d\n", i, config.min, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set range min to %dmm\n", i, config.min);
+            break;
+        }
+
+        if (sensor.setRangeMax_mm(config.max))
+        {
+            int check = sensor.getRangeMax_mm();
+
+            if (check == config.max)
+            {
+                debug_printf("Sensor: %d, set range max to %dmm\n", i, config.max);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set range max to %dmm, response %d\n", i, config.max, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set range max to %dmm\n", i, config.max);
+            break;
+        }
+
+        if (sensor.setRangeOffset((uint)config.offset))
+        {
+            int check = sensor.getRangeOffset();
+
+            if (check == config.offset)
+            {
+                debug_printf("Sensor: %d, set range offset to %dmm\n", i, config.offset);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set range offset to %dmm, response %d\n", i, config.offset, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set range offset to %dmm\n", i, config.offset);
+            break;
+        }
+
+        uint lincor = (uint)(config.linearCorrection * 0x8000);
+
+        if (sensor.setRangeLinearCorrection(lincor))
+        {
+            int check = sensor.getRangeLinearCorrection();
+
+            if (check == lincor)
+            {
+                debug_printf("Sensor: %d, set range linear correction to %f\n", i, config.linearCorrection);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set range linear correction to %f, response %d\n", i, config.linearCorrection, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set range linear correction to %f\n", i, config.linearCorrection);
+            break;
+        }
+
+        if (sensor.setRangeTiming_ms(config.timing_ms))
+        {
+            int check = sensor.getRangeTiming_ms();
+
+            if (check == config.timing_ms)
+            {
+                debug_printf("Sensor: %d, set range timing to %dms\n", i, config.timing_ms);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set range timing to %dms, response %d\n", i, config.timing_ms, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set range timing to %dms\n", i, config.timing_ms);
+            break;
+        }
+
+        if (sensor.setSerialBaudRate(config.baud))
+        {
+            OneWireDevice::DeviceSerialBaudRate check = sensor.getSerialBaudRate();
+
+            if (check == config.baud)
+            {
+                debug_printf("Sensor: %d, set baud to %d\n", i, config.baud);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set baud to %d, response %d\n", i, config.baud, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set baud to %d\n", i, config.baud);
+            break;
+        }
+
+        if (sensor.setIOMode(config.ioMode))
+        {
+            OneWireDevice::DeviceIOMode check = sensor.getIOMode();
+
+            if (check == config.ioMode)
+            {
+                debug_printf("Sensor: %d, set ioMode to %d\n", i, config.ioMode);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set ioMode to %d, response %d\n", i, config.ioMode, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set ioMode to %d\n", i, config.ioMode);
+            break;
+        }
+
+        if (sensor.setIndex(config.serialIndex))
+        {
+            uint check = 0;
+            if (!sensor.readIndex(check))
+            {
+                debug_printf("Sensor: %d, failed to set ioMode to %d\n", i, config.serialIndex);
+                break;
+            }
+            else if (check == config.serialIndex)
+            {
+                debug_printf("Sensor: %d, set ioMode to %d\n", i, config.serialIndex);
+            }
+            else
+            {
+                debug_printf("Sensor: %d, failed to set ioMode to %d, response %d\n", i, config.serialIndex, check);
+                break;
+            }
+        }
+        else
+        {
+            debug_printf("Sensor: %d, failed to set ioMode to %d\n", i, config.serialIndex);
+            break;
+        }
+
+        if (!sensor.saveConfiguration())
+        {
+            debug_printf("Sensor: %d, failed to save configuration\n");
+            break;
+        }
+        ok = true;
+    } while(0);
+
+    sleep_ms(50);
+    sensor_restart_digital(pin);
+    wire0.setBaudrate(initialBaud);
+    wire0.changePin(pin, true);
+    return ok;
+}
+
+void configure_sensors(void)
+{
+    debug_printf("Configuring distance sensors\n");
+
+    for (size_t i = 0; i < DISTANCE_SENSOR_COUNT; i++)
+    {
+        if (!distance_sensor_configure(i, distance_sensor_configurations[i]))
+        {
+            error_handler("Failed to configure sensor!", i);
+        }
+    }
+
+    debug_printf("Configuring completed\n");
+}
+
+void sensor_restart_serial(uint pin)
+{
+    gpio_put(SENSORS_ENABLE, 0);
+    gpio_deinit(pin);
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_OUT);
+    gpio_put(pin, 0);
+    sleep_ms(50);
+    gpio_put(SENSORS_ENABLE, 1);
+    sleep_ms(100);
+    gpio_set_dir(pin, GPIO_IN);
+}
+
+void sensor_restart_digital(uint pin)
+{
+    gpio_put(SENSORS_ENABLE, 0);
+    gpio_deinit(pin);
+    gpio_init(pin);
+    gpio_set_dir(pin, GPIO_IN);
+    sleep_ms(50);
+    gpio_put(SENSORS_ENABLE, 1);
+    sleep_ms(100);
+}
+
+bool init_sensors(void)
+{
+    for (size_t i = 0; i < DISTANCE_SENSOR_COUNT; i++)
+    {
+        gpio_init(distance_sensor_pins[i]);
+        gpio_set_dir(line_sensor_pins[i], GPIO_IN);
+    }
+
+    for (size_t i = 0; i < LINE_SENSOR_COUNT; i++)
+    {
+        gpio_init(line_sensor_pins[i]);
+        gpio_set_dir(line_sensor_pins[i], GPIO_IN);
+    }
+
+    gpio_put(SENSORS_ENABLE, 1);
+    sleep_ms(100);
+
+    bool error = false;
+
+    for (size_t i = 0; i < DISTANCE_SENSOR_COUNT; i++)
+    {
+        wire0.changePin(distance_sensor_pins[i]);
+        if (distance_sensor.begin())
+        {
+            debug_printf("Sensor %d, OK\n", i);
+        }
+        else
+        {
+            debug_printf("Sensor %d, FAIL\n", i);
+            error = true;
+        }
+    }
+
+    return error;
 }

@@ -35,11 +35,12 @@ bool OneWireDevice::waitForBoot(int timeout_ms)
 
 bool OneWireDevice::setIndex(uint index)
 {
-    uint _index = this->index;
+    //uint _index = this->index;
     if (!writeRegister(CONFIG_SERIAL_ID_REG, index))
     {
         return false;
     }
+    /*
     if (!saveConfiguration())
     {
         return false;
@@ -55,6 +56,7 @@ bool OneWireDevice::setIndex(uint index)
         this->index = _index;
         return false;
     }
+        */
     return true;
 }
 
@@ -98,12 +100,13 @@ bool OneWireDevice::setSerialBaudRate(OneWireDevice::DeviceSerialBaudRate baud)
         return false;
     }
 
-    DeviceSerialBaudRate previousBaud = getSerialBaudRate();
+    //DeviceSerialBaudRate previousBaud = getSerialBaudRate();
 
     if (!writeRegister(CONFIG_SERIAL_BAUD_REG, baud))
     {
         return false;
     }
+    /*
     if (!saveConfiguration())
     {
         return false;
@@ -120,6 +123,7 @@ bool OneWireDevice::setSerialBaudRate(OneWireDevice::DeviceSerialBaudRate baud)
         oneWire.setBaudrate(baudRateFromCode(previousBaud));
         return false;
     }
+    */
     return true;
 }
 

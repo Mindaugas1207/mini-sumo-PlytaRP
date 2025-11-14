@@ -25,7 +25,7 @@ public:
     void deinit(void);
     void stop(void);
     void start(void);
-    void changePin(uint pin);
+    void changePin(uint pin, bool forced = false) override;
     void listen(bool enable) override; 
     bool available(void) override;
     char getc(void) override;
@@ -34,6 +34,7 @@ public:
     void write(const char *string) override;
     int readUntil(char *buf, int len, char stopChar, int timeout_ms) override;
     void setBaudrate(int baud) override;
+    uint getBaudrate(void) override;
 };
 
 #endif // PIO_ONE_WIRE_SERIAL_H

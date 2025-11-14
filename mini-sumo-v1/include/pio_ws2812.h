@@ -31,7 +31,7 @@ public:
     void init(void);
     void set(uint32_t grbw);
     void set(Color c) override;
-
+    void setBlocking(Color c) override;
     void update(void);
     void blink(Color color_on, Color color_off, uint period_on, uint period_off, int count = -1) override;
     void blinkBlocking(Color color_on, Color color_off, uint period_on, uint period_off, int count) override;

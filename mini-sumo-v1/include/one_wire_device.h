@@ -29,7 +29,7 @@ public:
     };
 private:
     OneWire &oneWire;
-    uint index;
+    
 
     constexpr int baudRateFromCode(DeviceSerialBaudRate code)
     {
@@ -44,6 +44,7 @@ private:
     }
 
 public:
+    uint index;
     OneWireDevice(OneWire &oneWire, uint index);
 
     bool begin(void);

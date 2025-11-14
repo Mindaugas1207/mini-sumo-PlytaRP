@@ -61,20 +61,20 @@ void PioOneWireSerial::start(void)
     pio_sm_set_enabled(pio, sm_rx, false);
 }
 
-void PioOneWireSerial::changePin(uint pin)
+void PioOneWireSerial::changePin(uint pin, bool forced)
 {
-    if (this->pin == pin) return;
-    stop();
-    gpio_deinit(pin);
+    if (!forced && this->pin == pin) return;
+    gpio_deinit(this->pin);
     this->pin = pin;
-    pio_gpio_init(pio, pin);
-    sm_config_set_out_pins(&c_tx, pin, 1);
-    sm_config_set_sideset_pins(&c_tx, pin);
-    sm_config_set_in_pins(&c_rx, pin); // for WAIT, IN
-    sm_config_set_jmp_pin(&c_rx, pin); // for JMP
+    stop();
+    sm_config_set_out_pins(&c_tx, this->pin, 1);
+    sm_config_set_sideset_pins(&c_tx, this->pin);
+    sm_config_set_in_pins(&c_rx, this->pin); // for WAIT, IN
+    sm_config_set_jmp_pin(&c_rx, this->pin); // for JMP
     pio_sm_init(pio, sm_tx, offset_tx, &c_tx);
     pio_sm_init(pio, sm_rx, offset_rx, &c_rx);
     start();
+    pio_gpio_init(pio, this->pin);
 }
 
 void PioOneWireSerial::setBaudrate(int baud)
@@ -89,6 +89,11 @@ void PioOneWireSerial::setBaudrate(int baud)
     pio_sm_set_enabled(pio, sm_tx, true);
     pio_sm_set_enabled(pio, sm_rx, false);
     this->baud = baud;
+}
+
+uint PioOneWireSerial::getBaudrate(void)
+{
+    return baud;
 }
 
 void PioOneWireSerial::listen(bool enable)

@@ -1,5 +1,4 @@
 #include "pico/stdlib.h"
-#include "config.h"
 #include "system.h"
 #include "motor_driver.h"
 #include "hardware/clocks.h"

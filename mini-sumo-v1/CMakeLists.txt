@@ -48,6 +48,7 @@ ${CMAKE_SOURCE_DIR}/source/motor_driver.cpp
         ${CMAKE_SOURCE_DIR}/source/pio_ws2812.cpp
         ${CMAKE_SOURCE_DIR}/source/async_imu.cpp
         ${CMAKE_SOURCE_DIR}/source/lsm6dsr.cpp
+        ${CMAKE_SOURCE_DIR}/source/state_machine.cpp
         )
 
 pico_set_program_name(mini-sumo-v1 "mini-sumo-v1")
