@@ -323,6 +323,13 @@ namespace vmath
             this->Z -= rhs.Z;
             return *this;
         }
+        quat_t &operator-=(const vect_t<T> &rhs)
+        {
+            this->X -= rhs.X;
+            this->Y -= rhs.Y;
+            this->Z -= rhs.Z;
+            return *this;
+        }
         quat_t &operator*=(const quat_t &rhs)
         {
             quat_t lhs = *this;
@@ -330,6 +337,15 @@ namespace vmath
             this->X = (lhs.W * rhs.X) + (lhs.X * rhs.W) + (lhs.Y * rhs.Z) - (lhs.Z * rhs.Y);
             this->Y = (lhs.W * rhs.Y) - (lhs.X * rhs.Z) + (lhs.Y * rhs.W) + (lhs.Z * rhs.X);
             this->Z = (lhs.W * rhs.Z) + (lhs.X * rhs.Y) - (lhs.Y * rhs.X) + (lhs.Z * rhs.W);
+            return *this;
+        }
+        quat_t &operator*=(const vect_t<T> &rhs)
+        {
+            quat_t lhs = *this;
+            this->W = -(lhs.X * rhs.X) - (lhs.Y * rhs.Y) - (lhs.Z * rhs.Z);
+            this->X = (lhs.W * rhs.X) + (lhs.Y * rhs.Z) - (lhs.Z * rhs.Y);
+            this->Y = (lhs.W * rhs.Y) - (lhs.X * rhs.Z) + (lhs.Z * rhs.X);
+            this->Z = (lhs.W * rhs.Z) + (lhs.X * rhs.Y) - (lhs.Y * rhs.X);
             return *this;
         }
         quat_t &operator/=(const quat_t &rhs)
@@ -396,7 +412,17 @@ namespace vmath
             lhs -= rhs;
             return lhs;
         }
+        friend quat_t operator-(quat_t lhs, const vect_t<T> &rhs)
+        {
+            lhs -= rhs;
+            return lhs;
+        }
         friend quat_t operator*(quat_t lhs, const quat_t &rhs)
+        {
+            lhs *= rhs;
+            return lhs;
+        }
+        friend quat_t operator*(quat_t lhs, const vect_t<T> &rhs)
         {
             lhs *= rhs;
             return lhs;
@@ -434,6 +460,8 @@ namespace vmath
         quat_t &Normalize(void) { return *this *= Inv_sqrt(this->W * this->W + this->X * this->X + this->Y * this->Y + this->Z * this->Z); }
 
         quat_t Conjugate(void) { return {this->W, -this->X, -this->Y, -this->Z}; }
+
+        vect_t<T> ToVector(void) { return {this->X, this->Y, this->Z}; }
 
         // Return Euler angles in radians
         vect_t<T> EulerAngles(void)

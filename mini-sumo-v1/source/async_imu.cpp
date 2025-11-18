@@ -236,11 +236,13 @@ void __not_in_flash_func(asyncTask)()
 
 void update(void)
 {
-    static vmath::vect_t<double> Accel = {0}, Gyro = {0};
+    static vmath::vect_t Accel = {0.0}, Gyro = {0.0};
+    static vmath::vect_t v = {0.0};
+    static vmath::vect_t s = {0.0};
     static absolute_time_t timestamp = 0;
     
 
-    vmath::vect_t<double> accel, gyro;
+    vmath::vect_t accel, gyro;
     if (readData(accel, gyro))
     {
         Accel = accel - AccelBias;
@@ -262,6 +264,14 @@ void update(void)
     double deltaT = ((double)absolute_time_diff_us(timestamp, time)) / (1000 * 1000);
     timestamp = time;
     auto quat = filter.Compute(Gyro, Accel, deltaT);
+
+    auto aq = quat * Accel * quat.Conjugate();
+    aq.Z -= IMU_G_EARTH; //remove gravity
+    auto a = (quat.Conjugate() * aq * quat).ToVector(); //compensated
+
+    v += a * deltaT;
+    s += v * deltaT;
+
     auto euler = quat.EulerAnglesDegrees();
     if (!mutex_try_enter(&data_mutex, NULL))
         return;

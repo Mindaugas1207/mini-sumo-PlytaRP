@@ -215,6 +215,8 @@ private:
 
     bool detected_long = false;
     bool detected_short = false;
+    bool detected_front_short = false;
+    bool detected_front_long = false;
     bool detected_push = false;
 
     double detected_angle_long = 0;
@@ -272,6 +274,8 @@ public:
 
     bool isDetectedShort() { return detected_short; }
     bool isDetectedLong() { return detected_long; }
+    bool isDetectedFrontShort() { return detected_front_short; }
+    bool isDetectedFrontLong() { return detected_front_long; }
     bool isDetectedPush() { return detected_push; }
     bool getAngleShort() { return detected_angle_short; }
     bool getAngleLong() { return detected_angle_long; }
@@ -502,6 +506,8 @@ void Robot::update_input(void)
             detected_angle_long = 0;
         }
 
+        detected_front_long = (distance_mm[SENSOR_CENTER_0] < SENSOR_RANGE_LONG) || ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_LONG) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_LONG));
+        detected_front_short = (distance_mm[SENSOR_CENTER_0] < SENSOR_RANGE_SHORT) || ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_SHORT) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_SHORT));
         detected_push = (distance_mm[SENSOR_CENTER_0] < SENSOR_RANGE_PUSH) || ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_PUSH) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_PUSH));
 
         if ((distance_mm[SENSOR_LEFT_0] < SENSOR_RANGE_PUSH) && (distance_mm[SENSOR_RIGHT_0] < SENSOR_RANGE_PUSH))
@@ -843,6 +849,35 @@ const SM::State turn_180_or_detect(
     },
     []{
         robot.move(turn_180_angle, 0, -1, turn_180_timeout);
+    }
+);
+
+const SM::State state_track_move_forward_step_1(
+    {
+        line_detected,
+        {
+            []{ return robot.isMoveComplete(); },
+            []{ sm.next(&state_move_forward_step_2); }
+        }
+    },
+    []{
+        robot.forward(move_forward_s1_speed, move_forward_s1_period);
+    }
+);
+
+const SM::State state_track_move_forward_step_2(
+    {
+        line_detected,
+        {
+            []{ return robot.isMoveComplete(); },
+            []{
+                robot.stop(); 
+                sm.branch_return();
+            }
+        }
+    },
+    []{
+        robot.forward(move_forward_s2_speed, move_forward_s2_period);
     }
 );
 
